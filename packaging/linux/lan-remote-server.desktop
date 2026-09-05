@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=LAN Remote Server
+Name[zh_CN]=局域网远程 Server
+Comment=LAN remote desktop registry and portal
+Comment[zh_CN]=局域网远程：注册中心与统一入口
+Exec=lan-remote-server
+Icon=lan-remote-server
+Terminal=false
+Categories=Network;RemoteAccess;
+Keywords=remote;registry;portal;
+StartupNotify=true

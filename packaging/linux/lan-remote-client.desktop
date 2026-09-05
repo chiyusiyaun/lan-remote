@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=LAN Remote Client
+Name[zh_CN]=局域网远程 Client
+Comment=LAN remote desktop controller and controlled endpoint
+Comment[zh_CN]=局域网远程桌面：可被控也可主控
+Exec=lan-remote-client
+Icon=lan-remote-client
+Terminal=false
+Categories=Network;RemoteAccess;
+Keywords=remote;desktop;lan;
+StartupNotify=true
