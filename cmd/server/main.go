@@ -1,4 +1,4 @@
-﻿// lan-remote-server: control endpoint (screen+input) + optional registry hub.
+// lan-remote-server: registry hub only. Devices register here; clients fetch the list.
 package main
 
 import (
@@ -6,182 +6,58 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/user"
-	"time"
+	"os/signal"
+	"syscall"
 
-	"lan-remote/internal/appwin"
 	"lan-remote/internal/config"
 	"lan-remote/internal/discovery"
 	"lan-remote/internal/registry"
-	"lan-remote/internal/server"
 )
 
-const appVersion = "1.1.0"
-
-func hostname() string {
-	h, err := os.Hostname()
-	if err != nil || h == "" {
-		if u, err := user.Current(); err == nil {
-			return u.Username
-		}
-		return "LAN-Remote"
-	}
-	return h
-}
+const appVersion = "1.2.0"
 
 func main() {
-	cfg, err := config.Load("server")
-	if err != nil {
-		cfg = &config.Data{HTTPPort: 8765, RegistryPort: 8760, Quality: 70, FPS: 15}
+	cfg, err := config.Load("service")
+	if err != nil || cfg == nil {
+		cfg = &config.Data{RegistryPort: 8760}
 	}
-
-	httpPort := flag.Int("port", cfg.HTTPPort, "control port (stream + input)")
-	regPort := flag.Int("registry", cfg.RegistryPort, "registry port (when this node is hub)")
-	hub := flag.String("hub", cfg.Hub, "registry hub host:port; empty = this node is the hub")
-	pin := flag.String("pin", cfg.PIN, "PIN (saved to config)")
-	quality := flag.Int("q", cfg.Quality, "JPEG quality 1-100")
-	fps := flag.Int("fps", cfg.FPS, "stream FPS 1-60")
-	noGUI := flag.Bool("no-gui", false, "console only")
-	hubOnly := flag.Bool("hub-only", false, "registry hub only (no screen/input)")
+	port := flag.Int("port", cfg.RegistryPort, "registry listen port")
 	flag.Parse()
 
-	name := hostname()
-	if cfg.DeviceName != "" {
-		name = cfg.DeviceName
-	}
+	cfg.RegistryPort = *port
+	cfg.Hub = "" // this is the hub
+	_ = config.Save("service", cfg)
+
 	ip := discovery.PrimaryIP()
-
-	if *pin != "" {
-		cfg.PIN = *pin
-	}
-	cfg.Hub = *hub
-	cfg.HTTPPort = *httpPort
-	cfg.RegistryPort = *regPort
-	cfg.Quality = *quality
-	cfg.FPS = *fps
-	if cfg.DeviceName == "" {
-		cfg.DeviceName = name
-	}
-	_ = config.Save("server", cfg)
-
-	hubAddr := cfg.Hub
-	isHub := hubAddr == ""
-	if isHub {
-		hubAddr = fmt.Sprintf("%s:%d", ip, *regPort)
-		reg := registry.New(*regPort)
-		go func() {
-			if err := reg.ListenAndServe(); err != nil {
-				log.Println("registry:", err)
-			}
-		}()
-		time.Sleep(120 * time.Millisecond)
-	}
-
-	if *hubOnly {
-		fmt.Printf("Hub only. Registry: http://%s:%d\n", ip, *regPort)
-		appwin.WaitSignal()
-		return
-	}
-
-	var regClient *registry.Client
-	srv := server.New(server.Config{
-		Addr:    fmt.Sprintf(":%d", *httpPort),
-		PIN:     cfg.PIN,
-		Quality: cfg.Quality,
-		FPS:     cfg.FPS,
-		Extra: map[string]string{
-			"hub":      hubAddr,
-			"role":     roleOf(isHub),
-			"version":  appVersion,
-			"app":      "server",
-		},
-		Peers: func() interface{} {
-			devs, err := registry.FetchDevices(hubAddr)
-			if err != nil {
-				return []interface{}{}
-			}
-			return devs
-		},
-		OnPINChanged: func(p string) {
-			cfg.PIN = p
-			_ = config.Save("server", cfg)
-			if regClient != nil {
-				regClient.SetPINSet(p != "")
-			}
-		},
-	})
+	reg := registry.New(*port)
 
 	errCh := make(chan error, 1)
 	go func() {
-		if err := srv.ListenAndServe(); err != nil {
+		if err := reg.ListenAndServe(); err != nil {
 			errCh <- err
 		}
 	}()
 
-	var port int
-	for i := 0; i < 60; i++ {
-		if srv.Port() > 0 {
-			port = srv.Port()
-			break
-		}
-		select {
-		case err := <-errCh:
-			appwin.Pause("Server failed: " + err.Error())
-			return
-		case <-time.After(50 * time.Millisecond):
-		}
-	}
-	if port == 0 {
-		port = *httpPort
-	}
-
-	regClient = registry.NewClient(hubAddr, name, ip, port, cfg.PIN != "", appVersion)
-	regClient.Start()
-
-	localURL := fmt.Sprintf("http://127.0.0.1:%d/", port)
-
 	fmt.Println("========================================")
 	fmt.Println("  LAN Remote SERVER  v" + appVersion)
-	fmt.Printf("  Device:   %s\n", name)
-	fmt.Printf("  Control:  http://%s:%d\n", ip, port)
-	if isHub {
-		fmt.Printf("  Registry: http://%s:%d  (HUB)\n", ip, *regPort)
-	} else {
-		fmt.Printf("  Hub:      %s\n", hubAddr)
-	}
-	fmt.Printf("  PIN:      %s\n", pinDisplay(cfg.PIN))
-	fmt.Printf("  Config:   %s\n", config.Path("server"))
+	fmt.Println("  Role:     Registry / Service")
+	fmt.Printf("  Listen:   :%d\n", *port)
+	fmt.Printf("  Address:  http://%s:%d\n", ip, *port)
+	fmt.Println("  Clients register here on port", *port)
 	fmt.Println("========================================")
 
 	go func() {
-		if err, ok := <-errCh; ok && err != nil {
-			appwin.Pause("Server crashed: " + err.Error())
+		if err := <-errCh; err != nil {
+			log.Println("registry failed:", err)
+			fmt.Println("Port may be in use. Press Enter to exit.")
+			var b [1]byte
+			_, _ = os.Stdin.Read(b[:])
 			os.Exit(1)
 		}
 	}()
 
-	if *noGUI {
-		appwin.OpenBrowser(localURL)
-		appwin.WaitSignal()
-		return
-	}
-	if !appwin.OpenWindow("LAN Remote Server", localURL, 1000, 720) {
-		appwin.OpenBrowser(localURL)
-		appwin.WaitSignal()
-	}
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
+	<-ch
+	fmt.Println("bye")
 }
-
-func roleOf(isHub bool) string {
-	if isHub {
-		return "hub"
-	}
-	return "node"
-}
-
-func pinDisplay(p string) string {
-	if p == "" {
-		return "(not set)"
-	}
-	return p + "  (saved)"
-}
-

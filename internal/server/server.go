@@ -30,6 +30,9 @@ type Config struct {
 	OnPINChanged func(pin string)
 	// Extra fields exposed on /api/status (hub, role, version…).
 	Extra map[string]string
+	// OnSetHub validates and stores the registry address (client mode).
+	// Return error to reject. Empty hub clears.
+	OnSetHub func(hub string) error
 }
 
 type Server struct {
@@ -132,6 +135,7 @@ func (s *Server) ListenAndServe() error {
 	mux.HandleFunc("/api/status", s.handleStatus)
 	mux.HandleFunc("/api/pin", s.handleSetPIN)
 	mux.HandleFunc("/api/peers", s.handlePeers)
+	mux.HandleFunc("/api/hub", s.handleSetHub)
 
 	srv := &http.Server{Addr: s.cfg.Addr, Handler: mux}
 
@@ -214,6 +218,36 @@ func (s *Server) handlePeers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{"peers": s.cfg.Peers()})
+}
+
+func (s *Server) handleSetHub(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", 405)
+		return
+	}
+	if s.cfg.OnSetHub == nil {
+		http.Error(w, "hub not supported", 400)
+		return
+	}
+	var body struct {
+		Hub string `json:"hub"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad request", 400)
+		return
+	}
+	if err := s.cfg.OnSetHub(body.Hub); err != nil {
+		http.Error(w, err.Error(), 502)
+		return
+	}
+	s.mu.Lock()
+	if s.cfg.Extra == nil {
+		s.cfg.Extra = map[string]string{}
+	}
+	s.cfg.Extra["hub"] = body.Hub
+	s.mu.Unlock()
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "hub": body.Hub})
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {

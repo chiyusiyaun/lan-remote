@@ -161,8 +161,8 @@ body.touch #mouseBtns{display:flex}
     </div>
     <div class="center-wrap">
       <div class="card">
-        <h1>设置本机 PIN</h1>
-        <p class="sub">对方连接这台电脑时需要输入此 PIN。启动后可随时在首页修改。</p>
+        <h1>设置本机</h1>
+        <p class="sub">PIN 用于对方连接这台电脑；Service IP 为注册中心（lan-remote-server 所在机器）。均可稍后修改。</p>
         <div class="field">
           <label>PIN 码（4–12 位）</label>
           <input id="pinInput" inputmode="numeric" maxlength="12" placeholder="例如 246810" autocomplete="off">
@@ -171,11 +171,15 @@ body.touch #mouseBtns{display:flex}
           <label>确认 PIN</label>
           <input id="pinConfirm" inputmode="numeric" maxlength="12" placeholder="再输入一次" autocomplete="off">
         </div>
+        <div class="field">
+          <label>Service IP（注册中心，可留空稍后填）</label>
+          <input id="svcInput" placeholder="例如 192.168.1.10" autocomplete="off" inputmode="url">
+        </div>
         <div class="actions">
           <button class="btn" id="btnRandomPin">随机生成</button>
-          <button class="btn primary" id="btnStartSvc">启动并允许被控</button>
+          <button class="btn primary" id="btnStartSvc">启动</button>
         </div>
-        <div class="hint">两台电脑都启动后，可在首页「局域网设备」里选择对方进行控制。</div>
+        <div class="hint">两台电脑都启动 client 并注册到同一 Service 后，可在「局域网设备」里互控。</div>
       </div>
     </div>
   </div>
@@ -188,6 +192,7 @@ body.touch #mouseBtns{display:flex}
       <div class="spacer"></div>
       <button class="btn" id="btnRefresh">刷新设备</button>
       <button class="btn" id="btnManual">手动连接</button>
+      <button class="btn" id="btnSetSvc">Service IP</button>
       <button class="btn" id="btnChangePin">修改 PIN</button>
     </div>
     <div class="home-body">
@@ -629,6 +634,19 @@ body.touch #mouseBtns{display:flex}
       });
       currentPIN = a;
       $('selfPin').textContent = a;
+      const svc = ($('svcInput').value||'').trim();
+      if (svc){
+        try {
+          await api('/api/hub', {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({hub: svc})
+          });
+          toast('已注册到 Service '+svc);
+        } catch(e){
+          toast('Service 连接失败，可稍后在首页重设');
+        }
+      }
       showScreen('screenHome');
       toast('本机已允许被控');
       refreshStatus();
@@ -650,6 +668,16 @@ body.touch #mouseBtns{display:flex}
     api('/api/pin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:p})})
       .then(()=>{ currentPIN=p; $('selfPin').textContent=p; toast('PIN 已更新'); })
       .catch(e=>toast('失败: '+e.message));
+  };
+  $('btnSetSvc').onclick = async ()=>{
+    const cur = ($('hubInfo').textContent||'').replace(/^.*?(\d+\.\d+\.\d+\.\d+.*)$/,'$1');
+    const p = prompt('Service IP / 地址（lan-remote-server 所在机器）', cur.includes('.')?cur.split(' ')[0]:'');
+    if (p===null || !p.trim()) return;
+    try {
+      await api('/api/hub',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hub:p.trim()})});
+      toast('已连接 Service');
+      loadPeers();
+    } catch(e){ toast(e.message||'失败'); }
   };
 
   $('btnRefresh').onclick = ()=>{ loadPeers(); refreshStatus(); toast('已刷新'); };

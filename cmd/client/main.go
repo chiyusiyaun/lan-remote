@@ -1,42 +1,34 @@
-// lan-remote-client: controller only — enter service IP in UI, list devices, remotes.
+// lan-remote-client: every PC — can be controlled (screen+input) and can control others.
 package main
 
 import (
-	_ "embed"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
-	"net"
-	"net/http"
+	"os"
+	"os/user"
 	"strings"
 	"sync"
+	"time"
 
 	"lan-remote/internal/appwin"
 	"lan-remote/internal/config"
+	"lan-remote/internal/discovery"
 	"lan-remote/internal/registry"
+	"lan-remote/internal/server"
 )
-
-//go:embed ui.html
-var uiHTML string
 
 const appVersion = "1.2.0"
 
-type hubState struct {
-	mu  sync.RWMutex
-	hub string
-}
-
-func (h *hubState) get() string {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	return h.hub
-}
-
-func (h *hubState) set(v string) {
-	h.mu.Lock()
-	h.hub = v
-	h.mu.Unlock()
+func hostname() string {
+	h, err := os.Hostname()
+	if err != nil || h == "" {
+		if u, err := user.Current(); err == nil {
+			return u.Username
+		}
+		return "LAN-Remote"
+	}
+	return h
 }
 
 func normalizeHub(s string) string {
@@ -44,121 +36,196 @@ func normalizeHub(s string) string {
 	s = strings.TrimPrefix(s, "http://")
 	s = strings.TrimPrefix(s, "https://")
 	s = strings.TrimSuffix(s, "/")
-	// host only -> add default registry port
-	if !strings.Contains(s, ":") {
-		s = s + ":8760"
+	if s != "" && !strings.Contains(s, ":") {
+		s += ":8760"
 	}
 	return s
+}
+
+type hubBox struct {
+	mu  sync.RWMutex
+	hub string
+}
+
+func (h *hubBox) get() string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.hub
+}
+
+func (h *hubBox) set(v string) {
+	h.mu.Lock()
+	h.hub = v
+	h.mu.Unlock()
 }
 
 func main() {
 	cfg, err := config.Load("client")
 	if err != nil {
-		cfg = &config.Data{RegistryPort: 8760}
+		cfg = &config.Data{HTTPPort: 8765, RegistryPort: 8760, Quality: 70, FPS: 15}
 	}
 
-	hubFlag := flag.String("hub", "", "optional hub host[:port]; can also set in UI")
-	uiPort := flag.Int("ui", 0, "local UI port (0 = random)")
-	noGUI := flag.Bool("no-gui", false, "open UI in browser")
+	httpPort := flag.Int("port", cfg.HTTPPort, "control port (this PC is controllable here)")
+	pin := flag.String("pin", cfg.PIN, "PIN for this PC")
+	hub := flag.String("hub", cfg.Hub, "Service/registry IP (can also set in UI)")
+	quality := flag.Int("q", cfg.Quality, "JPEG quality")
+	fps := flag.Int("fps", cfg.FPS, "FPS")
+	noGUI := flag.Bool("no-gui", false, "console + browser")
 	flag.Parse()
 
-	hs := &hubState{}
-	// flag > saved config > empty (UI will ask)
-	switch {
-	case *hubFlag != "":
-		hs.set(normalizeHub(*hubFlag))
-	case cfg.Hub != "":
-		hs.set(normalizeHub(cfg.Hub))
+	name := hostname()
+	if cfg.DeviceName != "" {
+		name = cfg.DeviceName
+	}
+	ip := discovery.PrimaryIP()
+
+	if *pin != "" {
+		cfg.PIN = *pin
+	}
+	cfg.HTTPPort = *httpPort
+	cfg.Quality = *quality
+	cfg.FPS = *fps
+	if *hub != "" {
+		cfg.Hub = normalizeHub(*hub)
+	}
+	if cfg.DeviceName == "" {
+		cfg.DeviceName = name
+	}
+	_ = config.Save("client", cfg)
+
+	hb := &hubBox{hub: normalizeHub(cfg.Hub)}
+	var regClient *registry.Client
+
+	startReg := func(hubAddr string) {
+		if hubAddr == "" {
+			return
+		}
+		if regClient != nil {
+			regClient.Stop()
+		}
+		regClient = registry.NewClient(hubAddr, name, ip, *httpPort, cfg.PIN != "", appVersion)
+		regClient.Start()
 	}
 
-	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", *uiPort))
-	if err != nil {
-		appwin.Pause("UI listen failed: " + err.Error())
-		return
+	// if hub already saved, register immediately (port may not be final yet; re-register after bind)
+	if h := hb.get(); h != "" {
+		go func() {
+			time.Sleep(500 * time.Millisecond)
+			startReg(h)
+		}()
 	}
-	uiURL := fmt.Sprintf("http://%s/", ln.Addr().String())
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write([]byte(uiHTML))
-	})
-	mux.HandleFunc("/api/status", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"ok":      true,
-			"app":     "client",
-			"hub":     hs.get(),
+	srv := server.New(server.Config{
+		Addr:    fmt.Sprintf(":%d", *httpPort),
+		PIN:     cfg.PIN,
+		Quality: cfg.Quality,
+		FPS:     cfg.FPS,
+		Extra: map[string]string{
+			"hub":     hb.get(),
+			"role":    "client",
 			"version": appVersion,
-		})
-	})
-	// set / change service (hub) address from UI
-	mux.HandleFunc("/api/hub", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "POST only", 405)
-			return
-		}
-		var body struct {
-			Hub string `json:"hub"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			http.Error(w, "bad request", 400)
-			return
-		}
-		addr := normalizeHub(body.Hub)
-		if addr == "" || strings.HasPrefix(addr, ":") {
-			http.Error(w, "invalid service address", 400)
-			return
-		}
-		// probe registry
-		if _, err := registry.FetchDevices(addr); err != nil {
-			http.Error(w, "无法连接注册中心 "+addr+"，请检查 IP 与端口", 502)
-			return
-		}
-		hs.set(addr)
-		cfg.Hub = addr
-		_ = config.Save("client", cfg)
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "hub": addr})
-	})
-	mux.HandleFunc("/api/devices", func(w http.ResponseWriter, r *http.Request) {
-		hub := hs.get()
-		if hub == "" {
-			http.Error(w, "hub not set", 400)
-			return
-		}
-		devs, err := registry.FetchDevices(hub)
-		if err != nil {
-			http.Error(w, err.Error(), 502)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"devices": devs})
+			"app":     "client",
+		},
+		Peers: func() interface{} {
+			h := hb.get()
+			if h == "" {
+				return []interface{}{}
+			}
+			devs, err := registry.FetchDevices(h)
+			if err != nil {
+				return []interface{}{}
+			}
+			return devs
+		},
+		OnPINChanged: func(p string) {
+			cfg.PIN = p
+			_ = config.Save("client", cfg)
+			if regClient != nil {
+				regClient.SetPINSet(p != "")
+			}
+		},
+		OnSetHub: func(raw string) error {
+			addr := normalizeHub(raw)
+			if addr == "" {
+				hb.set("")
+				cfg.Hub = ""
+				_ = config.Save("client", cfg)
+				return nil
+			}
+			if _, err := registry.FetchDevices(addr); err != nil {
+				return fmt.Errorf("无法连接 Service %s", addr)
+			}
+			hb.set(addr)
+			cfg.Hub = addr
+			_ = config.Save("client", cfg)
+			// re-bind registry with actual port
+			startReg(addr)
+			log.Println("hub set:", addr)
+			return nil
+		},
 	})
 
+	errCh := make(chan error, 1)
 	go func() {
-		if err := http.Serve(ln, mux); err != nil {
-			log.Println("ui:", err)
+		if err := srv.ListenAndServe(); err != nil {
+			errCh <- err
 		}
 	}()
 
+	var port int
+	for i := 0; i < 60; i++ {
+		if srv.Port() > 0 {
+			port = srv.Port()
+			break
+		}
+		select {
+		case err := <-errCh:
+			appwin.Pause("Client failed: " + err.Error())
+			return
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	if port == 0 {
+		port = *httpPort
+	}
+	// correct registry port if bind changed
+	if regClient != nil {
+		startReg(hb.get())
+	}
+
+	localURL := fmt.Sprintf("http://127.0.0.1:%d/", port)
+
 	fmt.Println("========================================")
 	fmt.Println("  LAN Remote CLIENT  v" + appVersion)
-	if h := hs.get(); h != "" {
-		fmt.Printf("  Hub: %s (saved)\n", h)
+	fmt.Printf("  Device:  %s\n", name)
+	fmt.Printf("  Control: http://%s:%d  (this PC)\n", ip, port)
+	if h := hb.get(); h != "" {
+		fmt.Printf("  Service: %s\n", h)
 	} else {
-		fmt.Println("  Hub: (enter Service IP in the window)")
+		fmt.Println("  Service: (enter in UI)")
 	}
-	fmt.Printf("  UI:  %s\n", uiURL)
+	if cfg.PIN != "" {
+		fmt.Printf("  PIN:     %s (saved)\n", cfg.PIN)
+	} else {
+		fmt.Println("  PIN:     (set in UI)")
+	}
+	fmt.Printf("  Config:  %s\n", config.Path("client"))
 	fmt.Println("========================================")
 
+	go func() {
+		if err, ok := <-errCh; ok && err != nil {
+			appwin.Pause("Client crashed: " + err.Error())
+			os.Exit(1)
+		}
+	}()
+
 	if *noGUI {
-		appwin.OpenBrowser(uiURL)
+		appwin.OpenBrowser(localURL)
 		appwin.WaitSignal()
 		return
 	}
-	if !appwin.OpenWindow("LAN Remote Client", uiURL, 1100, 760) {
-		appwin.OpenBrowser(uiURL)
+	if !appwin.OpenWindow("LAN Remote", localURL, 1100, 760) {
+		appwin.OpenBrowser(localURL)
 		appwin.WaitSignal()
 	}
 }
