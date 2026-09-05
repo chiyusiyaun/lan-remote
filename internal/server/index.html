@@ -340,6 +340,7 @@ body.touch #mouseBtns{display:flex}
   let currentPIN = '';
   let peerTimer = null;
   let pendingAddrs = [];
+  let useProxy = false; // true when page is served from server portal
 
   function toast(msg){
     toastEl.textContent = msg;
@@ -478,7 +479,10 @@ body.touch #mouseBtns{display:flex}
       if (!/^https?:\/\//i.test(chost)) chost = 'http://'+chost;
       let cu;
       try { cu = new URL(chost); } catch { tryNext(); return; }
-      const curl = (cu.protocol==='https:'?'wss:':'ws:')+'//'+cu.host+'/ws';
+      // Portal mode: go through server:8765/proxy so users only need the server IP
+      const curl = useProxy
+        ? ((location.protocol==='https:'?'wss:':'ws:')+'//'+location.host+'/proxy?target='+encodeURIComponent(cu.host))
+        : ((cu.protocol==='https:'?'wss:':'ws:')+'//'+cu.host+'/ws');
       $('remoteTitle').textContent = cu.host;
       setConnected(false, '连接中… '+cu.host);
 
@@ -744,47 +748,53 @@ body.touch #mouseBtns{display:flex}
   const host = location.hostname;
   const isLocal = host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]';
 
-  function enterControllerMode(){
-    // remote browser: only control others, cannot change this machine's PIN
+  function enterControllerMode(label){
     $('btnChangePin').classList.add('hidden');
-    document.querySelector('#screenHome .panel .pin-box').classList.add('hidden');
-    $('homeStatus').textContent = '控制端模式（无法修改本机 PIN）';
+    const pinBox = document.querySelector('#screenHome .panel .pin-box');
+    if (pinBox) pinBox.classList.add('hidden');
+    $('homeStatus').textContent = label || '控制端模式';
     showScreen('screenHome');
     refreshStatus();
     loadPeers();
     peerTimer = setInterval(loadPeers, 3000);
   }
 
-  if (bootPin){
-    currentPIN = bootPin;
-    $('selfPin').textContent = bootPin;
-    showScreen('screenHome');
-    refreshStatus();
-    loadPeers();
-    peerTimer = setInterval(loadPeers, 3000);
-  } else if (!isLocal){
-    enterControllerMode();
-  } else {
-    // local: if PIN already saved on server, skip setup
-    api('/api/status').then(st => {
+  api('/api/status').then(st=>{
+    if (st && (st.proxy || st.app === 'portal')){
+      useProxy = true;
+      enterControllerMode('统一入口 · 通过 Server 代理控制');
+      return;
+    }
+    if (bootPin){
+      currentPIN = bootPin;
+      $('selfPin').textContent = bootPin;
+      showScreen('screenHome');
+      refreshStatus();
+      loadPeers();
+      peerTimer = setInterval(loadPeers, 3000);
+    } else if (!isLocal){
+      enterControllerMode('控制端模式（无法修改本机 PIN）');
+    } else {
       if (st && st.pin_set){
-        // PIN is on disk; we don't have the value in UI but service is ready
         currentPIN = '••••••';
         $('selfPin').textContent = '已保存';
-        $('pinSavedHint').style.display = '';
+        const hint = $('pinSavedHint');
+        if (hint) hint.style.display = '';
         showScreen('screenHome');
         refreshStatus();
         loadPeers();
         peerTimer = setInterval(loadPeers, 3000);
       } else {
         showScreen('screenSetup');
-        $('pinInput').focus();
+        const pi = $('pinInput');
+        if (pi) pi.focus();
       }
-    }).catch(() => {
-      showScreen('screenSetup');
-      $('pinInput').focus();
-    });
-  }
+    }
+  }).catch(()=>{
+    showScreen('screenSetup');
+    const pi = $('pinInput');
+    if (pi) pi.focus();
+  });
 })();
 </script>
 </body>

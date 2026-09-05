@@ -1,39 +1,13 @@
-﻿LAN Remote Desktop v1.2.0
-=========================
+﻿LAN Remote v1.2.0
+=================
+server  8760 注册中心 + 8765 统一门户（不把自己注册为设备）
+client  每台电脑：8765 被控 + 主控界面
 
-角色说明（已对调）
-------------------
-lan-remote-server   服务端 / 注册中心（Service）
-                    只监听注册口，默认 8760
-                    不截屏、不注入
-
-lan-remote-client   客户端（装在每台电脑）
-                    控制口 8765：可被控（截屏+键鼠）
-                    界面：设 PIN、填 Service IP、选设备互控
-
-用法
-----
-【中心机器】
+【中心机】
   lan-remote-server.exe
-  记下屏幕上显示的 Address，例如 http://192.168.1.10:8760
+  浏览器/手机统一打开: http://中心机IP:8765
 
-【每台要参与的电脑】
-  lan-remote-client.exe
-  首次启动：
-    1. 设置本机 PIN
-    2. 填 Service IP（中心机 IP，如 192.168.1.10）
-    3. 启动
-  首页「局域网设备」点对方 → 输入对方 PIN → 控制
+【各电脑】
+  lan-remote-client.exe  设 PIN + Service IP（中心机IP）
 
-端口
-----
-  8760  Service 注册口（server）
-  8765  控制口（client）
-
-配置
-----
-  Windows  %APPDATA%\lan-remote\server.json
-           %APPDATA%\lan-remote\client.json
-  Linux    ~/.config/lan-remote/
-
-防火墙：管理员运行 open-firewall.bat
+手机只需访问 http://中心机IP:8765 选设备控制（经 server 代理）。
