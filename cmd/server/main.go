@@ -1,4 +1,4 @@
-// lan-remote-server: registry (8760) + unified portal (8765). Not a controllable device.
+// lan-remote-server: registry + portal. Not a controllable device.
 package main
 
 import (
@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/signal"
-	"syscall"
+	"time"
 
+	"lan-remote/internal/appwin"
 	"lan-remote/internal/config"
 	"lan-remote/internal/discovery"
 	"lan-remote/internal/portal"
@@ -23,13 +23,20 @@ func main() {
 		cfg = &config.Data{RegistryPort: 8760, HTTPPort: 8765}
 	}
 	regPort := flag.Int("port", cfg.RegistryPort, "registry listen port")
-	portalPort := flag.Int("portal", cfg.HTTPPort, "portal/UI listen port (no self-register)")
+	portalPort := flag.Int("portal", cfg.HTTPPort, "portal/UI listen port")
+	noGUI := flag.Bool("no-gui", false, "no window, console only")
+	bg := flag.Bool("bg", false, "background: log to file, no console (daemon-friendly)")
+	logPath := flag.String("log", "", "log file path when -bg")
 	flag.Parse()
+
+	if *bg {
+		appwin.Background(*logPath)
+	}
 
 	cfg.RegistryPort = *regPort
 	cfg.HTTPPort = *portalPort
 	cfg.Hub = ""
-	cfg.PIN = "" // server is never controllable
+	cfg.PIN = ""
 	_ = config.Save("service", cfg)
 
 	ip := discovery.PrimaryIP()
@@ -42,7 +49,6 @@ func main() {
 		}
 	}()
 
-	// Portal: device list + remote control via WS proxy. Does NOT register itself.
 	p := portal.New(portal.Config{
 		Addr:     fmt.Sprintf(":%d", *portalPort),
 		Registry: fmt.Sprintf("127.0.0.1:%d", *regPort),
@@ -54,26 +60,41 @@ func main() {
 		}
 	}()
 
+	adminURL := fmt.Sprintf("http://127.0.0.1:%d/", *regPort)
+	portalURL := fmt.Sprintf("http://%s:%d/", ip, *portalPort)
+
 	fmt.Println("========================================")
 	fmt.Println("  LAN Remote SERVER  v" + appVersion)
-	fmt.Println("  Role:     Registry + Portal (not controllable)")
-	fmt.Printf("  Registry: :%d  ->  http://%s:%d\n", *regPort, ip, *regPort)
-	fmt.Printf("  Portal:   :%d  ->  http://%s:%d  (统一入口)\n", *portalPort, ip, *portalPort)
-	fmt.Println("  Clients register on 8760; users open Portal on 8765")
+	fmt.Println("  Role:     Registry + Portal")
+	fmt.Printf("  Admin:    %s\n", adminURL)
+	fmt.Printf("  Portal:   %s\n", portalURL)
 	fmt.Println("========================================")
 
 	go func() {
 		if err := <-errCh; err != nil {
 			log.Println(err)
-			fmt.Println("Port may be in use. Press Enter to exit.")
-			var b [1]byte
-			_, _ = os.Stdin.Read(b[:])
+			if !*bg && !*noGUI {
+				appwin.Pause("Server failed: " + err.Error())
+			}
 			os.Exit(1)
 		}
 	}()
 
-	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
-	<-ch
-	fmt.Println("bye")
+	if *noGUI {
+		appwin.WaitSignal()
+		return
+	}
+
+	if *bg {
+		// headless: tray only (Windows/Linux desktop); else just wait
+		go func() {
+			time.Sleep(300 * time.Millisecond)
+			appwin.RunWithTray("LAN Remote Server", adminURL, 900, 640, true)
+		}()
+		appwin.WaitSignal()
+		return
+	}
+
+	// GUI: window + tray (close window → minimize to tray)
+	appwin.RunWithTray("LAN Remote Server", adminURL, 960, 680, false)
 }

@@ -60,6 +60,7 @@ func (s *Server) Port() int { return s.port }
 
 func (s *Server) ListenAndServe() error {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/", s.handleAdmin)
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("ok"))
 	})

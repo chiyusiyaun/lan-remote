@@ -68,10 +68,16 @@ func main() {
 	httpPort := flag.Int("port", cfg.HTTPPort, "control port (this PC is controllable here)")
 	pin := flag.String("pin", cfg.PIN, "PIN for this PC")
 	hub := flag.String("hub", cfg.Hub, "Service/registry IP (can also set in UI)")
-	quality := flag.Int("q", cfg.Quality, "JPEG quality")
-	fps := flag.Int("fps", cfg.FPS, "FPS")
+	quality := flag.Int("q", cfg.Quality, "JPEG quality 1-100")
+	fps := flag.Int("fps", cfg.FPS, "FPS 1-240")
 	noGUI := flag.Bool("no-gui", false, "console + browser")
+	bg := flag.Bool("bg", false, "background: log to file, no console")
+	logPath := flag.String("log", "", "log file path when -bg")
 	flag.Parse()
+
+	if *bg {
+		appwin.Background(*logPath)
+	}
 
 	name := hostname()
 	if cfg.DeviceName != "" {
@@ -214,7 +220,10 @@ func main() {
 
 	go func() {
 		if err, ok := <-errCh; ok && err != nil {
-			appwin.Pause("Client crashed: " + err.Error())
+			if !*bg {
+				appwin.Pause("Client crashed: " + err.Error())
+			}
+			log.Println("client error:", err)
 			os.Exit(1)
 		}
 	}()
@@ -224,8 +233,13 @@ func main() {
 		appwin.WaitSignal()
 		return
 	}
-	if !appwin.OpenWindow("LAN Remote", localURL, 1100, 760) {
-		appwin.OpenBrowser(localURL)
+	if *bg {
+		go func() {
+			time.Sleep(300 * time.Millisecond)
+			appwin.RunWithTray("LAN Remote", localURL, 1100, 760, true)
+		}()
 		appwin.WaitSignal()
+		return
 	}
+	appwin.RunWithTray("LAN Remote", localURL, 1100, 760, false)
 }

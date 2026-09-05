@@ -49,11 +49,17 @@ type Server struct {
 }
 
 func New(cfg Config) *Server {
-	if cfg.Quality <= 0 || cfg.Quality > 100 {
+	if cfg.Quality <= 0 {
 		cfg.Quality = 70
 	}
-	if cfg.FPS <= 0 || cfg.FPS > 60 {
+	if cfg.Quality > 100 {
+		cfg.Quality = 100
+	}
+	if cfg.FPS <= 0 {
 		cfg.FPS = 15
+	}
+	if cfg.FPS > 240 {
+		cfg.FPS = 240
 	}
 	hn, _ := os.Hostname()
 	return &Server{
@@ -136,6 +142,8 @@ func (s *Server) ListenAndServe() error {
 	mux.HandleFunc("/api/pin", s.handleSetPIN)
 	mux.HandleFunc("/api/peers", s.handlePeers)
 	mux.HandleFunc("/api/hub", s.handleSetHub)
+	mux.HandleFunc("/api/file", s.handleUpload)
+	mux.HandleFunc("/api/download", s.handleDownload)
 
 	srv := &http.Server{Addr: s.cfg.Addr, Handler: mux}
 
@@ -352,7 +360,7 @@ func (s *Server) handleInput(m *wsMsg) {
 		if m.Quality >= 1 && m.Quality <= 100 {
 			s.cfg.Quality = m.Quality
 		}
-		if m.FPS >= 1 && m.FPS <= 60 {
+		if m.FPS >= 1 && m.FPS <= 240 {
 			s.cfg.FPS = m.FPS
 		}
 	}

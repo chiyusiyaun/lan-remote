@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LAN Remote Server</title>
+<style>
+:root{
+  --bg:#0f1115; --panel:#171a21; --line:#2a2f3a;
+  --text:#e8eaef; --muted:#8b93a7; --accent:#4f8cff; --ok:#3dd68c; --warn:#f5a524;
+}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+.wrap{max-width:720px;margin:0 auto;padding:24px 16px 40px}
+h1{font-size:20px;margin:0 0 4px}
+.sub{color:var(--muted);font-size:13px;margin:0 0 20px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}
+.panel h2{margin:0 0 12px;font-size:13px;color:var(--muted);font-weight:600;letter-spacing:.04em}
+.row{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px;flex-wrap:wrap}
+.row:last-child{border-bottom:none}
+.k{color:var(--muted)}
+.v{font-variant-numeric:tabular-nums;word-break:break-all;text-align:right}
+.badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;background:#1f3d2a;color:var(--ok)}
+.peer{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--line);border-radius:12px;margin-bottom:8px;background:#1c212b}
+.avatar{width:36px;height:36px;border-radius:9px;background:#2a3348;color:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:700}
+.meta{flex:1;min-width:0}
+.name{font-weight:600;font-size:14px}
+.addr{font-size:12px;color:var(--muted);margin-top:2px}
+.empty{padding:20px;text-align:center;color:var(--muted);border:1px dashed var(--line);border-radius:12px;font-size:13px}
+.btn{border:1px solid var(--line);background:#1f2430;color:var(--text);border-radius:10px;padding:8px 14px;font-size:13px;cursor:pointer}
+.foot{color:var(--muted);font-size:12px;margin-top:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>LAN Remote Server</h1>
+  <p class="sub">注册中心状态 · 本页不提供远程控制入口（控制请开 Portal :8765）</p>
+
+  <div class="panel">
+    <h2>服务</h2>
+    <div class="row"><span class="k">状态</span><span class="v"><span class="badge">运行中</span></span></div>
+    <div class="row"><span class="k">注册口</span><span class="v" id="regPort">—</span></div>
+    <div class="row"><span class="k">本机地址</span><span class="v" id="ips">—</span></div>
+    <div class="row"><span class="k">在线设备</span><span class="v" id="count">—</span></div>
+  </div>
+
+  <div class="panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h2 style="margin:0">已注册设备</h2>
+      <button class="btn" id="btnRefresh">刷新</button>
+    </div>
+    <div id="list"><div class="empty">加载中…</div></div>
+  </div>
+
+  <p class="foot">数据每 3 秒自动刷新 · 统一控制入口：http://本机IP:8765</p>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+async function load(){
+  try{
+    const r = await fetch('/api/devices');
+    const d = await r.json();
+    const peers = d.devices || [];
+    $('count').textContent = peers.length + ' 台';
+    $('regPort').textContent = location.port || '80';
+    const list = $('list');
+    if(!peers.length){ list.innerHTML = '<div class="empty">暂无设备注册。请在各电脑启动 lan-remote-client 并填 Service IP。</div>'; return; }
+    list.innerHTML = '';
+    const ips = new Set();
+    peers.forEach(p=>{
+      (p.addrs||[p.addr]).forEach(a=>{ if(a) ips.add(a); });
+      const el = document.createElement('div');
+      el.className = 'peer';
+      el.innerHTML = '<div class="avatar">'+((p.name||'?')[0]||'?').toUpperCase()+'</div>'
+        + '<div class="meta"><div class="name"></div><div class="addr"></div></div>'
+        + '<div class="badge">'+(p.pin_set?'已设PIN':'未设PIN')+'</div>';
+      el.querySelector('.name').textContent = p.name || p.addr;
+      el.querySelector('.addr').textContent = (p.addrs||[p.addr]).filter(Boolean).join('  ·  ');
+      list.appendChild(el);
+    });
+    if(ips.size) $('ips').textContent = [...ips].join('  ·  ');
+  }catch(e){
+    $('list').innerHTML = '<div class="empty">加载失败：'+e.message+'</div>';
+  }
+}
+$('btnRefresh').onclick = load;
+load();
+setInterval(load, 3000);
+</script>
+</body>
+</html>

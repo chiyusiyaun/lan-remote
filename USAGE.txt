@@ -1,13 +1,14 @@
 ﻿LAN Remote v1.2.0
 =================
-server  8760 注册中心 + 8765 统一门户（不把自己注册为设备）
-client  每台电脑：8765 被控 + 主控界面
+server  8760 注册+管理页  8765 门户（不注册自己）
+client  8765 被控+主控
 
-【中心机】
-  lan-remote-server.exe
-  浏览器/手机统一打开: http://中心机IP:8765
+后台
+  Windows: 关窗到托盘；-bg 无控制台
+  Linux:   -bg 或 nohup ./lan-remote-server -bg &
+  Linux 依赖: scrot/imagemagick + xdotool
 
-【各电脑】
-  lan-remote-client.exe  设 PIN + Service IP（中心机IP）
+文件传输
+  远程控制时点「传文件」→ 存到对方 Downloads\lan-remote\
 
-手机只需访问 http://中心机IP:8765 选设备控制（经 server 代理）。
+画质/帧率: 界面可调，帧率最高 120

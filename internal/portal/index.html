@@ -229,8 +229,10 @@ body.touch #mouseBtns{display:flex}
       <div class="status"><span class="dot" id="remoteDot"></span><span id="remoteStxt">未连接</span></div>
       <div class="spacer"></div>
       <button class="btn" id="btnRemoteKeys">键盘</button>
+      <button class="btn" id="btnSendFile">传文件</button>
       <button class="btn" id="btnRemoteSet">画质</button>
       <button class="btn danger" id="btnDisconnect">断开</button>
+      <input type="file" id="filePicker" class="hidden" multiple>
     </div>
     <div id="stage">
       <canvas id="screen" width="16" height="9"></canvas>
@@ -278,11 +280,11 @@ body.touch #mouseBtns{display:flex}
     <h2>画质与帧率</h2>
     <div class="field">
       <label>画质 <span id="qVal">70</span></label>
-      <input id="quality" type="range" min="30" max="95" value="70">
+      <input id="quality" type="range" min="1" max="100" value="70">
     </div>
     <div class="field">
       <label>帧率 <span id="fVal">15</span> FPS</label>
-      <input id="fps" type="range" min="5" max="30" value="15">
+      <input id="fps" type="range" min="1" max="120" value="15">
     </div>
     <div class="actions"><button class="btn primary" id="btnCloseSettings">完成</button></div>
   </div>
@@ -341,6 +343,8 @@ body.touch #mouseBtns{display:flex}
   let peerTimer = null;
   let pendingAddrs = [];
   let useProxy = false; // true when page is served from server portal
+  let sessionPin = '';
+  let sessionTarget = ''; // host:port of currently connected device
 
   function toast(msg){
     toastEl.textContent = msg;
@@ -502,6 +506,8 @@ body.touch #mouseBtns{display:flex}
           if (m.type==='auth'){
             if (m.ok){
               authed = true;
+              sessionPin = pin;
+              sessionTarget = cu.host;
               setConnected(true, '已连接');
               toast('已连接 '+cu.host);
               send({type:'settings', quality:+$('quality').value, fps:+$('fps').value});
@@ -733,6 +739,39 @@ body.touch #mouseBtns{display:flex}
   $('btnRemoteKeys').onclick = ()=>{ $('keysPanel').classList.remove('hidden'); kb.focus(); };
   $('btnCloseKeys').onclick = ()=> $('keysPanel').classList.add('hidden');
   $('btnRemoteSet').onclick = ()=> $('settingsPanel').classList.remove('hidden');
+
+  // ---- file transfer ----
+  async function uploadFile(file){
+    if(!connected || !sessionPin || !sessionTarget){ toast('请先连接设备'); return; }
+    const fd = new FormData();
+    fd.append('file', file);
+    let url;
+    if(useProxy){
+      url = '/api/file?target='+encodeURIComponent(sessionTarget);
+    }else{
+      url = 'http://'+sessionTarget+'/api/file';
+    }
+    toast('上传中 '+file.name+'…');
+    try{
+      const r = await fetch(url, {
+        method:'POST',
+        headers:{ 'X-LR-Pin': sessionPin },
+        body: fd
+      });
+      const t = await r.text();
+      if(!r.ok) throw new Error(t||('HTTP '+r.status));
+      let j={}; try{ j=JSON.parse(t) }catch{}
+      toast('已保存到对方: '+(j.path||file.name));
+    }catch(e){
+      toast('上传失败: '+(e.message||e));
+    }
+  }
+  $('btnSendFile').onclick = ()=>{ if(!connected){toast('未连接');return;} $('filePicker').click(); };
+  $('filePicker').onchange = async ()=>{
+    const files = [...$('filePicker').files];
+    $('filePicker').value = '';
+    for(const f of files){ await uploadFile(f); }
+  };
   $('btnCloseSettings').onclick = ()=>{
     $('settingsPanel').classList.add('hidden');
     $('qVal').textContent = $('quality').value;
