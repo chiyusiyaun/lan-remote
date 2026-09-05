@@ -18,3 +18,6 @@ Thumbs.db
 *.swp
 .idea/
 .vscode/
+
+# local helper copies at repo root
+/open-firewall.bat
