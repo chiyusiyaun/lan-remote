@@ -913,20 +913,49 @@ body.touch #mouseBtns{display:flex}
     }
   }
 
-  async function downloadRemote(f){
+  async function fetchRemoteBlob(f){
     const b = fileBase();
-    if(!b) return false;
+    if(!b) return null;
+    const url = b.dl + (b.dl.includes('?')?'&':'?') + 'path='+encodeURIComponent(f.path)+'&pin='+encodeURIComponent(sessionPin);
+    const r = await fetch(url, { headers:{'X-LR-Pin':sessionPin} });
+    if(!r.ok) throw new Error(await r.text());
+    return await r.blob();
+  }
+
+  function browserSave(blob, name){
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 10000);
+  }
+
+  async function saveBlobAs(blob, name){
+    // Native save dialog (WebView2 / Chromium) — not browser download bar
+    if (window.showSaveFilePicker) {
+      try {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: name,
+          types: [{ description: 'File', accept: { '*/*': [] } }]
+        });
+        const w = await handle.createWritable();
+        await w.write(blob);
+        await w.close();
+        return true;
+      } catch (e) {
+        if (e && e.name === 'AbortError') return false;
+        // fall through
+      }
+    }
+    browserSave(blob, name);
+    return true;
+  }
+
+  async function downloadRemote(f){
     try{
-      const url = b.dl + (b.dl.includes('?')?'&':'?') + 'path='+encodeURIComponent(f.path)+'&pin='+encodeURIComponent(sessionPin);
-      const r = await fetch(url, { headers:{'X-LR-Pin':sessionPin} });
-      if(!r.ok) throw new Error(await r.text());
-      const blob = await r.blob();
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = f.name;
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(()=>URL.revokeObjectURL(a.href), 8000);
-      return true;
+      const blob = await fetchRemoteBlob(f);
+      if(!blob) return false;
+      return await saveBlobAs(blob, f.name);
     }catch(e){
       toast('下载失败 '+f.name+': '+(e.message||e));
       return false;
@@ -1020,6 +1049,28 @@ body.touch #mouseBtns{display:flex}
   $('btnDownloadSel').onclick = async ()=>{
     const sel = selectedRemote();
     if(!sel.length){ toast('请在右侧勾选要下载的文件（文件夹请进入后再选）'); return; }
+    // multi-file: pick one folder and write all (native, not browser bar)
+    if (sel.length > 1 && window.showDirectoryPicker) {
+      let dir;
+      try { dir = await window.showDirectoryPicker({ mode: 'readwrite' }); }
+      catch { return; }
+      let ok = 0;
+      for (const f of sel) {
+        try {
+          const blob = await fetchRemoteBlob(f);
+          if (!blob) continue;
+          const h = await dir.getFileHandle(f.name, { create: true });
+          const w = await h.createWritable();
+          await w.write(blob);
+          await w.close();
+          ok++;
+        } catch(e) {
+          toast('写入失败 '+f.name);
+        }
+      }
+      toast('已保存到所选文件夹 '+ok+'/'+sel.length);
+      return;
+    }
     toast('下载 '+sel.length+' 个文件…');
     let ok=0;
     for(const f of sel){ if(await downloadRemote(f)) ok++; }
