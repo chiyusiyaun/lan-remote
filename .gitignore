@@ -1,0 +1,15 @@
+# build outputs
+/dist/
+*.exe
+*.zip
+*.tar.gz
+
+# logs
+*.log
+
+# editor / OS
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
