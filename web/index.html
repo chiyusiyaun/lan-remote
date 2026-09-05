@@ -100,6 +100,20 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
 
 /* remote view */
 #screenRemote{background:#000}
+#screenRemote:fullscreen,
+#screenRemote:-webkit-full-screen{
+  background:#000;
+  display:flex!important;
+  flex-direction:column;
+}
+#screenRemote:fullscreen .bar,
+#screenRemote:-webkit-full-screen .bar{
+  padding-top:8px;
+}
+#screenRemote:fullscreen #stage,
+#screenRemote:-webkit-full-screen #stage{
+  flex:1;
+}
 #stage{
   flex:1;position:relative;display:flex;align-items:center;justify-content:center;
   background:#000;overflow:hidden;touch-action:none;
@@ -231,8 +245,10 @@ body.touch #mouseBtns{display:flex}
       <button class="btn" id="btnRemoteKeys">键盘</button>
       <button class="btn" id="btnSendFile">文件</button>
       <button class="btn" id="btnRemoteSet">画质</button>
+      <button class="btn" id="btnFullscreen">全屏</button>
       <button class="btn danger" id="btnDisconnect">断开</button>
       <input type="file" id="filePicker" class="hidden" multiple>
+      <input type="file" id="folderPicker" class="hidden" webkitdirectory multiple>
     </div>
     <div id="stage">
       <canvas id="screen" width="16" height="9"></canvas>
@@ -325,20 +341,32 @@ body.touch #mouseBtns{display:flex}
 </div>
 
 <div class="overlay hidden" id="filesPanel">
-  <div class="sheet">
-    <h2>文件互传</h2>
-    <p style="margin:0 0 12px;color:var(--muted);font-size:12px;line-height:1.5">
-      发送：本机 → 被控机（保存到对方 Downloads\lan-remote）<br>
-      接收：从被控机列表下载到本机浏览器
-    </p>
-    <div class="actions" style="margin-bottom:14px">
-      <button class="btn primary" id="btnPickSend">发送到被控机</button>
-      <button class="btn" id="btnListRemote">刷新对方文件</button>
+  <div class="sheet" style="width:min(860px,calc(100% - 16px));max-height:calc(100% - 32px);display:flex;flex-direction:column">
+    <h2 style="margin-bottom:10px">文件互传</h2>
+    <div class="actions" style="margin-bottom:10px;flex-wrap:wrap">
+      <button class="btn" id="btnPickFiles">选择本机文件</button>
+      <button class="btn" id="btnPickFolder">选择本机文件夹</button>
+      <button class="btn primary" id="btnUploadSel">上传 →</button>
+      <button class="btn primary" id="btnDownloadSel">← 下载</button>
+      <button class="btn" id="btnListRemote">刷新远端</button>
       <button class="btn" id="btnCloseFiles">关闭</button>
     </div>
-    <div id="remoteFiles" style="max-height:280px;overflow:auto">
-      <div class="empty" style="padding:16px;border:1px dashed var(--line);border-radius:10px;color:var(--muted);font-size:13px;text-align:center">点「刷新对方文件」加载</div>
+    <div style="display:flex;gap:10px;flex:1;min-height:280px;overflow:hidden">
+      <div style="flex:1;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#12151c">
+        <div style="padding:8px 12px;border-bottom:1px solid var(--line);font-size:12px;color:var(--muted);font-weight:600">本机（左）</div>
+        <div id="localFiles" style="flex:1;overflow:auto;padding:6px"></div>
+      </div>
+      <div style="width:28px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--muted);font-size:16px">
+        <div>⇄</div>
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#12151c">
+        <div style="padding:8px 12px;border-bottom:1px solid var(--line);font-size:12px;color:var(--muted);font-weight:600">远端（右）· Downloads\lan-remote</div>
+        <div id="remoteFiles" style="flex:1;overflow:auto;padding:6px"></div>
+      </div>
     </div>
+    <p style="margin:10px 0 0;color:var(--muted);font-size:12px;line-height:1.4">
+      勾选后点「上传 →」发到被控机；点「← 下载」拉到本机浏览器。远端仅显示对方接收目录中的文件。
+    </p>
   </div>
 </div>
 
@@ -758,84 +786,21 @@ body.touch #mouseBtns{display:flex}
   $('btnCloseKeys').onclick = ()=> $('keysPanel').classList.add('hidden');
   $('btnRemoteSet').onclick = ()=> $('settingsPanel').classList.remove('hidden');
 
-  // ---- file transfer (bidirectional) ----
+  // ---- file transfer (dual pane) ----
+  let localList = [];   // {name, size, file}
+  let remoteList = [];  // {name, path, size, mod}
+
   function fileBase(){
     if(!connected || !sessionPin || !sessionTarget) return null;
     if(useProxy){
       return {
         file: '/api/file?target='+encodeURIComponent(sessionTarget),
         list: '/api/files?target='+encodeURIComponent(sessionTarget),
-        dl:   '/api/download?target='+encodeURIComponent(sessionTarget),
-        pinHeader: true
+        dl:   '/api/download?target='+encodeURIComponent(sessionTarget)
       };
     }
     const h = 'http://'+sessionTarget;
-    return {
-      file: h+'/api/file',
-      list: h+'/api/files',
-      dl:   h+'/api/download',
-      pinHeader: true
-    };
-  }
-
-  async function uploadFile(file){
-    const b = fileBase();
-    if(!b){ toast('请先连接设备'); return; }
-    const fd = new FormData();
-    fd.append('file', file);
-    toast('上传中 '+file.name+'…');
-    try{
-      const r = await fetch(b.file, {
-        method:'POST',
-        headers:{ 'X-LR-Pin': sessionPin },
-        body: fd
-      });
-      const t = await r.text();
-      if(!r.ok) throw new Error(t||('HTTP '+r.status));
-      let j={}; try{ j=JSON.parse(t) }catch{}
-      toast('已发送到对方: '+(j.path||file.name));
-      loadRemoteFiles();
-    }catch(e){
-      toast('发送失败: '+(e.message||e));
-    }
-  }
-
-  async function loadRemoteFiles(){
-    const b = fileBase();
-    const box = $('remoteFiles');
-    if(!b){ box.innerHTML='<div style="padding:16px;color:var(--muted);text-align:center">未连接</div>'; return; }
-    box.innerHTML = '<div style="padding:16px;color:var(--muted);text-align:center">加载中…</div>';
-    try{
-      const r = await fetch(b.list, { headers:{ 'X-LR-Pin': sessionPin } });
-      const t = await r.text();
-      if(!r.ok) throw new Error(t||('HTTP '+r.status));
-      const j = JSON.parse(t);
-      const files = j.files||[];
-      if(!files.length){
-        box.innerHTML = '<div style="padding:16px;color:var(--muted);text-align:center">对方暂无文件（Downloads\\lan-remote）</div>';
-        return;
-      }
-      box.innerHTML = '';
-      files.forEach(f=>{
-        const row = document.createElement('div');
-        row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;background:#1c212b';
-        const meta = document.createElement('div');
-        meta.style.cssText = 'flex:1;min-width:0';
-        meta.innerHTML = '<div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>'
-          + '<div style="font-size:11px;color:var(--muted);margin-top:2px"></div>';
-        meta.children[0].textContent = f.name;
-        meta.children[1].textContent = fmtSize(f.size)+' · '+(f.mod||'');
-        const btn = document.createElement('button');
-        btn.className = 'btn';
-        btn.textContent = '下载';
-        btn.onclick = ()=> downloadRemote(f);
-        row.appendChild(meta);
-        row.appendChild(btn);
-        box.appendChild(row);
-      });
-    }catch(e){
-      box.innerHTML = '<div style="padding:16px;color:var(--bad);text-align:center">'+e.message+'</div>';
-    }
+    return { file: h+'/api/file', list: h+'/api/files', dl: h+'/api/download' };
   }
 
   function fmtSize(n){
@@ -845,37 +810,174 @@ body.touch #mouseBtns{display:flex}
     return (n/1073741824).toFixed(2)+' GB';
   }
 
+  function renderLocal(){
+    const box = $('localFiles');
+    if(!localList.length){
+      box.innerHTML = '<div style="padding:20px;color:var(--muted);text-align:center;font-size:13px">点「选择本机文件 / 文件夹」</div>';
+      return;
+    }
+    box.innerHTML = '';
+    localList.forEach((it, idx)=>{
+      const row = document.createElement('label');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;margin-bottom:4px;cursor:pointer;font-size:13px';
+      row.innerHTML = '<input type="checkbox" class="lchk" data-i="'+idx+'" style="accent-color:#4f8cff">'
+        + '<div style="flex:1;min-width:0"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>'
+        + '<div style="font-size:11px;color:var(--muted)"></div></div>';
+      row.querySelector('div div').textContent = it.name;
+      row.querySelectorAll('div div')[1].textContent = fmtSize(it.size);
+      box.appendChild(row);
+    });
+  }
+
+  function renderRemote(){
+    const box = $('remoteFiles');
+    if(!remoteList.length){
+      box.innerHTML = '<div style="padding:20px;color:var(--muted);text-align:center;font-size:13px">点「刷新远端」加载</div>';
+      return;
+    }
+    box.innerHTML = '';
+    remoteList.forEach((f, idx)=>{
+      const row = document.createElement('label');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;margin-bottom:4px;cursor:pointer;font-size:13px';
+      row.innerHTML = '<input type="checkbox" class="rchk" data-i="'+idx+'" style="accent-color:#4f8cff">'
+        + '<div style="flex:1;min-width:0"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>'
+        + '<div style="font-size:11px;color:var(--muted)"></div></div>';
+      row.querySelector('div div').textContent = f.name;
+      row.querySelectorAll('div div')[1].textContent = fmtSize(f.size)+(f.mod?' · '+f.mod:'');
+      box.appendChild(row);
+    });
+  }
+
+  function selectedLocal(){
+    return [...document.querySelectorAll('.lchk:checked')].map(el=> localList[+el.dataset.i]).filter(Boolean);
+  }
+  function selectedRemote(){
+    return [...document.querySelectorAll('.rchk:checked')].map(el=> remoteList[+el.dataset.i]).filter(Boolean);
+  }
+
+  async function uploadFile(file){
+    const b = fileBase();
+    if(!b){ toast('请先连接设备'); return false; }
+    const fd = new FormData();
+    fd.append('file', file, file.name);
+    try{
+      const r = await fetch(b.file, { method:'POST', headers:{'X-LR-Pin':sessionPin}, body: fd });
+      const t = await r.text();
+      if(!r.ok) throw new Error(t||('HTTP '+r.status));
+      return true;
+    }catch(e){
+      toast('上传失败 '+file.name+': '+(e.message||e));
+      return false;
+    }
+  }
+
+  async function loadRemoteFiles(){
+    const b = fileBase();
+    if(!b){ renderRemote(); return; }
+    $('remoteFiles').innerHTML = '<div style="padding:16px;color:var(--muted);text-align:center">加载中…</div>';
+    try{
+      const r = await fetch(b.list, { headers:{'X-LR-Pin':sessionPin} });
+      const t = await r.text();
+      if(!r.ok) throw new Error(t||('HTTP '+r.status));
+      const j = JSON.parse(t);
+      remoteList = j.files||[];
+      renderRemote();
+    }catch(e){
+      $('remoteFiles').innerHTML = '<div style="padding:16px;color:var(--bad);text-align:center">'+e.message+'</div>';
+    }
+  }
+
   async function downloadRemote(f){
     const b = fileBase();
-    if(!b) return;
-    toast('下载 '+f.name+'…');
+    if(!b) return false;
     try{
       const url = b.dl + (b.dl.includes('?')?'&':'?') + 'path='+encodeURIComponent(f.path)+'&pin='+encodeURIComponent(sessionPin);
-      const r = await fetch(url, { headers:{ 'X-LR-Pin': sessionPin } });
+      const r = await fetch(url, { headers:{'X-LR-Pin':sessionPin} });
       if(!r.ok) throw new Error(await r.text());
       const blob = await r.blob();
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = f.name;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
-      toast('已下载 '+f.name);
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(a.href), 8000);
+      return true;
     }catch(e){
-      toast('下载失败: '+(e.message||e));
+      toast('下载失败 '+f.name+': '+(e.message||e));
+      return false;
     }
   }
 
-  $('btnSendFile').onclick = ()=>{ if(!connected){toast('未连接');return;} $('filesPanel').classList.remove('hidden'); loadRemoteFiles(); };
-  $('btnPickSend').onclick = ()=>{ if(!connected){toast('未连接');return;} $('filePicker').click(); };
+  $('btnSendFile').onclick = ()=>{
+    if(!connected){ toast('未连接'); return; }
+    $('filesPanel').classList.remove('hidden');
+    renderLocal();
+    loadRemoteFiles();
+  };
+  $('btnPickFiles').onclick = ()=> $('filePicker').click();
+  $('btnPickFolder').onclick = ()=>{
+    if($('folderPicker').showPicker){ try{ $('folderPicker').showPicker(); return; }catch(_){} }
+    $('folderPicker').click();
+  };
+  function addPickedFiles(fileArr){
+    const seen = new Set(localList.map(x=> x.name+':'+x.size));
+    [...fileArr].forEach(f=>{
+      const key = f.name+':'+f.size;
+      if(!seen.has(key)){
+        localList.push({ name: f.name, size: f.size, file: f });
+        seen.add(key);
+      }
+    });
+    renderLocal();
+  }
+  $('filePicker').onchange = ()=>{ addPickedFiles($('filePicker').files); $('filePicker').value=''; };
+  $('folderPicker').onchange = ()=>{
+    const files = [...$('folderPicker').files].map(f=>{
+      const rel = f.webkitRelativePath || f.name;
+      return new File([f], rel.split('/').pop()||f.name, { type:f.type, lastModified:f.lastModified });
+    });
+    // keep File objects from input for FormData
+    addPickedFiles($('folderPicker').files);
+    $('folderPicker').value='';
+  };
+  $('btnUploadSel').onclick = async ()=>{
+    const sel = selectedLocal();
+    if(!sel.length){ toast('请在左侧勾选要上传的文件'); return; }
+    toast('上传 '+sel.length+' 个文件…');
+    let ok=0;
+    for(const it of sel){ if(await uploadFile(it.file)) ok++; }
+    toast('上传完成 '+ok+'/'+sel.length);
+    loadRemoteFiles();
+  };
+  $('btnDownloadSel').onclick = async ()=>{
+    const sel = selectedRemote();
+    if(!sel.length){ toast('请在右侧勾选要下载的文件'); return; }
+    toast('下载 '+sel.length+' 个文件…');
+    let ok=0;
+    for(const f of sel){ if(await downloadRemote(f)) ok++; }
+    toast('下载完成 '+ok+'/'+sel.length);
+  };
   $('btnListRemote').onclick = ()=> loadRemoteFiles();
   $('btnCloseFiles').onclick = ()=> $('filesPanel').classList.add('hidden');
-  $('filePicker').onchange = async ()=>{
-    const files = [...$('filePicker').files];
-    $('filePicker').value = '';
-    for(const f of files){ await uploadFile(f); }
+
+  // ---- fullscreen ----
+  function isFS(){ return !!(document.fullscreenElement || document.webkitFullscreenElement); }
+  function setFSLabel(){
+    $('btnFullscreen').textContent = isFS() ? '退出全屏' : '全屏';
+  }
+  $('btnFullscreen').onclick = ()=>{
+    const el = $('screenRemote');
+    if(!isFS()){
+      const p = el.requestFullscreen || el.webkitRequestFullscreen;
+      if(p) p.call(el);
+    }else{
+      const x = document.exitFullscreen || document.webkitExitFullscreen;
+      if(x) x.call(document);
+    }
+    setTimeout(()=>{ setFSLabel(); fitCanvas(); }, 120);
   };
+  document.addEventListener('fullscreenchange', ()=>{ setFSLabel(); fitCanvas(); });
+  document.addEventListener('webkitfullscreenchange', ()=>{ setFSLabel(); fitCanvas(); });
+
   $('btnCloseSettings').onclick = ()=>{
     $('settingsPanel').classList.add('hidden');
     $('qVal').textContent = $('quality').value;
