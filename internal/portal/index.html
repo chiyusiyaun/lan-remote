@@ -248,7 +248,6 @@ body.touch #mouseBtns{display:flex}
       <button class="btn" id="btnFullscreen">全屏</button>
       <button class="btn danger" id="btnDisconnect">断开</button>
       <input type="file" id="filePicker" class="hidden" multiple>
-      <input type="file" id="folderPicker" class="hidden" webkitdirectory multiple>
     </div>
     <div id="stage">
       <canvas id="screen" width="16" height="9"></canvas>
@@ -914,10 +913,7 @@ body.touch #mouseBtns{display:flex}
     loadRemoteFiles();
   };
   $('btnPickFiles').onclick = ()=> $('filePicker').click();
-  $('btnPickFolder').onclick = ()=>{
-    if($('folderPicker').showPicker){ try{ $('folderPicker').showPicker(); return; }catch(_){} }
-    $('folderPicker').click();
-  };
+  $('btnPickFolder').onclick = ()=> pickFolder();
   function addPickedFiles(fileArr){
     const seen = new Set(localList.map(x=> x.name+':'+x.size));
     [...fileArr].forEach(f=>{
@@ -930,15 +926,47 @@ body.touch #mouseBtns{display:flex}
     renderLocal();
   }
   $('filePicker').onchange = ()=>{ addPickedFiles($('filePicker').files); $('filePicker').value=''; };
-  $('folderPicker').onchange = ()=>{
-    const files = [...$('folderPicker').files].map(f=>{
-      const rel = f.webkitRelativePath || f.name;
-      return new File([f], rel.split('/').pop()||f.name, { type:f.type, lastModified:f.lastModified });
-    });
-    // keep File objects from input for FormData
-    addPickedFiles($('folderPicker').files);
-    $('folderPicker').value='';
-  };
+
+  async function pickFolder(){
+    // 1) File System Access API (WebView2 / Chromium)
+    if (window.showDirectoryPicker) {
+      try {
+        const dir = await window.showDirectoryPicker();
+        const files = [];
+        async function walk(handle){
+          for await (const [name, h] of handle.entries()) {
+            if (h.kind === 'file') {
+              const f = await h.getFile();
+              files.push(new File([f], name, { type: f.type, lastModified: f.lastModified }));
+            } else if (h.kind === 'directory') {
+              // only one level deep to keep it simple; recurse fully
+              await walk(h);
+            }
+          }
+        }
+        await walk(dir);
+        if (!files.length) { toast('文件夹为空'); return; }
+        addPickedFiles(files);
+        toast('已加入 '+files.length+' 个文件');
+        return;
+      } catch (e) {
+        if (e && e.name === 'AbortError') return;
+        // fall through to webkitdirectory
+      }
+    }
+    // 2) fallback: temporary visible webkitdirectory input
+    const inp = document.createElement('input');
+    inp.type = 'file';
+    inp.webkitdirectory = true;
+    inp.multiple = true;
+    inp.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0';
+    document.body.appendChild(inp);
+    inp.onchange = ()=>{
+      if (inp.files && inp.files.length) addPickedFiles(inp.files);
+      inp.remove();
+    };
+    inp.click();
+  }
   $('btnUploadSel').onclick = async ()=>{
     const sel = selectedLocal();
     if(!sel.length){ toast('请在左侧勾选要上传的文件'); return; }
