@@ -1,22 +1,23 @@
 //go:build windows
 
-package main
+package appwin
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
+	"os/signal"
+	"syscall"
 
 	webview2 "github.com/jchv/go-webview2"
 )
 
-// openAppWindow shows a native desktop window (WebView2).
-// Returns false ONLY if the webview could not be created.
-func openAppWindow(title, url string, w, h int) bool {
+func openWindow(title, url string, w, h int) bool {
 	defer func() {
 		if r := recover(); r != nil {
 			fmt.Println("webview panic:", r)
 		}
 	}()
-
 	wv := webview2.NewWithOptions(webview2.WebViewOptions{
 		AutoFocus: true,
 		WindowOptions: webview2.WindowOptions{
@@ -27,12 +28,20 @@ func openAppWindow(title, url string, w, h int) bool {
 		},
 	})
 	if wv == nil {
-		fmt.Println("ERROR: WebView2 window creation returned nil")
 		return false
 	}
 	defer wv.Destroy()
 	wv.Navigate(url)
-	fmt.Println("Native app window opened (not a browser).")
 	wv.Run()
 	return true
+}
+
+func openBrowser(url string) {
+	_ = exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+}
+
+func waitSignal() {
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
+	<-ch
 }

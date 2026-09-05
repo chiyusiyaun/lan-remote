@@ -1,19 +1,18 @@
-# LAN Remote Desktop — build scripts
-.PHONY: all win linux clean test
+.PHONY: all server client linux clean
 
 OUT=dist
 LDFLAGS=-s -w
+LDFLAGS_WIN=$(LDFLAGS) -H windowsgui
 
-all: win linux
+all: server client
 
-win:
-	go build -ldflags "$(LDFLAGS)" -o $(OUT)/lan-remote-windows-amd64.exe .
+server:
+	go build -ldflags "$(LDFLAGS_WIN)" -o $(OUT)/lan-remote-server.exe ./cmd/server
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(OUT)/lan-remote-server-linux ./cmd/server
 
-linux:
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(OUT)/lan-remote-linux-amd64 .
-
-arm64:
-	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(OUT)/lan-remote-linux-arm64 .
+client:
+	go build -ldflags "$(LDFLAGS_WIN)" -o $(OUT)/lan-remote-client.exe ./cmd/client
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(OUT)/lan-remote-client-linux ./cmd/client
 
 test:
 	go test ./...
