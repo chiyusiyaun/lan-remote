@@ -71,6 +71,11 @@ func onReady() {
 		}
 		systray.Quit()
 	})
+	systray.SetOnDClick(func(menu systray.IMenu) {
+		if optsKeep.OnOpen != nil {
+			optsKeep.OnOpen()
+		}
+	})
 }
 
 func onExit() {}
