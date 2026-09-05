@@ -53,6 +53,7 @@ func (s *Server) ListenAndServe() error {
 	mux.HandleFunc("/api/file", s.handleFileRelay)
 	mux.HandleFunc("/api/files", s.handleFilesRelay)
 	mux.HandleFunc("/api/download", s.handleDownloadRelay)
+	mux.HandleFunc("/api/mkdir", s.handleMkdirRelay)
 	mux.HandleFunc("/proxy", s.handleProxy)
 
 	ln, err := net.Listen("tcp", s.cfg.Addr)
@@ -246,6 +247,10 @@ func (s *Server) handleFilesRelay(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDownloadRelay(w http.ResponseWriter, r *http.Request) {
 	s.relayGET(w, r, "/api/download")
+}
+
+func (s *Server) handleMkdirRelay(w http.ResponseWriter, r *http.Request) {
+	s.relayGET(w, r, "/api/mkdir") // mkdir is GET? use POST via generic
 }
 
 // silence unused in some builds

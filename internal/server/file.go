@@ -245,6 +245,30 @@ func allowedPath(p, home string) bool {
 	return p != ""
 }
 
+// handleMkdir creates a directory (PIN required).
+func (s *Server) handleMkdir(w http.ResponseWriter, r *http.Request) {
+	pin := r.Header.Get("X-LR-Pin")
+	if pin == "" {
+		pin = r.URL.Query().Get("pin")
+	}
+	if s.PIN() == "" || pin != s.PIN() {
+		http.Error(w, "bad pin", 403)
+		return
+	}
+	path := r.URL.Query().Get("path")
+	if path == "" {
+		http.Error(w, "path required", 400)
+		return
+	}
+	clean := filepath.Clean(path)
+	if err := os.MkdirAll(clean, 0o755); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "path": clean})
+}
+
 func listRoots() []map[string]interface{} {
 	var out []map[string]interface{}
 	if runtime.GOOS == "windows" {

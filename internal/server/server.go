@@ -145,6 +145,7 @@ func (s *Server) ListenAndServe() error {
 	mux.HandleFunc("/api/file", s.handleUpload)
 	mux.HandleFunc("/api/download", s.handleDownload)
 	mux.HandleFunc("/api/files", s.handleListFiles)
+	mux.HandleFunc("/api/mkdir", s.handleMkdir)
 
 	srv := &http.Server{Addr: s.cfg.Addr, Handler: mux}
 

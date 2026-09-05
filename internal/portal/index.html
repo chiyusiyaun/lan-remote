@@ -340,37 +340,34 @@ body.touch #mouseBtns{display:flex}
 </div>
 
 <div class="overlay hidden" id="filesPanel">
-  <div class="sheet" style="width:min(860px,calc(100% - 16px));max-height:calc(100% - 32px);display:flex;flex-direction:column">
-    <h2 style="margin-bottom:10px">文件互传</h2>
+  <div class="sheet" style="width:min(900px,calc(100% - 16px));max-height:calc(100% - 32px);display:flex;flex-direction:column">
+    <h2 style="margin-bottom:10px">文件夹互传</h2>
     <div class="actions" style="margin-bottom:10px;flex-wrap:wrap">
-      <button class="btn" id="btnPickFiles">选择本机文件</button>
-      <button class="btn" id="btnPickFolder">选择本机文件夹</button>
+      <button class="btn" id="btnOpenLocalDir">打开本机文件夹</button>
+      <button class="btn" id="btnLocalUp">本机上级</button>
       <button class="btn primary" id="btnUploadSel">上传 →</button>
       <button class="btn primary" id="btnDownloadSel">← 下载</button>
-      <button class="btn" id="btnListRemote">刷新远端</button>
+      <button class="btn" id="btnRemoteUp2">远端上级</button>
+      <button class="btn" id="btnRemoteRoots">远端磁盘</button>
       <button class="btn" id="btnCloseFiles">关闭</button>
     </div>
-    <div style="display:flex;gap:10px;flex:1;min-height:280px;overflow:hidden">
+    <div style="display:flex;gap:10px;flex:1;min-height:320px;overflow:hidden">
       <div style="flex:1;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#12151c">
-        <div style="padding:8px 12px;border-bottom:1px solid var(--line);font-size:12px;color:var(--muted);font-weight:600">本机（左）</div>
+        <div style="padding:8px 12px;border-bottom:1px solid var(--line);font-size:12px;color:var(--muted);font-weight:600">本机目录（左）</div>
+        <div id="localPath" style="padding:6px 12px;font-size:11px;color:var(--muted);border-bottom:1px solid var(--line);word-break:break-all">未打开文件夹</div>
         <div id="localFiles" style="flex:1;overflow:auto;padding:6px"></div>
       </div>
-      <div style="width:28px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--muted);font-size:16px">
+      <div style="width:28px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--muted);font-size:18px">
         <div>⇄</div>
       </div>
       <div style="flex:1;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#12151c">
-        <div style="padding:8px 12px;border-bottom:1px solid var(--line);font-size:12px;color:var(--muted);font-weight:600;display:flex;align-items:center;gap:8px">
-          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">远端（右）</span>
-          <button class="btn" id="btnRemoteUp" style="padding:4px 8px;font-size:12px">上级</button>
-          <button class="btn" id="btnRemoteHome" style="padding:4px 8px;font-size:12px">Home</button>
-          <button class="btn" id="btnRemoteRoots" style="padding:4px 8px;font-size:12px">磁盘</button>
-        </div>
+        <div style="padding:8px 12px;border-bottom:1px solid var(--line);font-size:12px;color:var(--muted);font-weight:600">远端目录（右）</div>
         <div id="remotePath" style="padding:6px 12px;font-size:11px;color:var(--muted);border-bottom:1px solid var(--line);word-break:break-all">—</div>
         <div id="remoteFiles" style="flex:1;overflow:auto;padding:6px"></div>
       </div>
     </div>
     <p style="margin:10px 0 0;color:var(--muted);font-size:12px;line-height:1.4">
-      左侧勾选后「上传 →」到当前远端目录；右侧可进文件夹/磁盘，勾选文件后「← 下载」。远端可访问本机全部路径。
+      两侧都是文件夹视图：点进入子目录。勾选后「上传 →」把本机选中项写到当前远端目录；「← 下载」把远端选中项写到当前本机目录。文件夹会整包上传。
     </p>
   </div>
 </div>
@@ -791,10 +788,13 @@ body.touch #mouseBtns{display:flex}
   $('btnCloseKeys').onclick = ()=> $('keysPanel').classList.add('hidden');
   $('btnRemoteSet').onclick = ()=> $('settingsPanel').classList.remove('hidden');
 
-  // ---- file transfer (dual pane) ----
-  let localList = [];   // {name, size, file}
-  let remoteList = [];  // {name, path, size, mod, is_dir}
-  let remoteCwd = '';   // current remote directory
+  // ---- file transfer: dual folder panes (local dir handle + remote API) ----
+  let localList = [];      // {name, kind:'file'|'dir', size, handle?, file?}
+  let localStack = [];     // dir handles for "up"
+  let localDirHandle = null;
+  let localDirName = '';
+  let remoteList = [];
+  let remoteCwd = '';
   let remoteParent = '';
   let remoteHome = '';
 
@@ -812,57 +812,61 @@ body.touch #mouseBtns{display:flex}
   }
 
   function fmtSize(n){
+    if(n == null) return '';
     if(n < 1024) return n+' B';
     if(n < 1048576) return (n/1024).toFixed(1)+' KB';
     if(n < 1073741824) return (n/1048576).toFixed(1)+' MB';
     return (n/1073741824).toFixed(2)+' GB';
   }
 
-  function renderLocal(){
-    const box = $('localFiles');
-    if(!localList.length){
-      box.innerHTML = '<div style="padding:20px;color:var(--muted);text-align:center;font-size:13px">点「选择本机文件 / 文件夹」</div>';
+  function renderPane(boxId, items, checkCls, onDirClick){
+    const box = $(boxId);
+    if(!items.length){
+      box.innerHTML = '<div style="padding:20px;color:var(--muted);text-align:center;font-size:13px">空目录</div>';
       return;
     }
     box.innerHTML = '';
-    localList.forEach((it, idx)=>{
+    items.forEach((it, idx)=>{
       const row = document.createElement('label');
       row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;margin-bottom:4px;cursor:pointer;font-size:13px';
-      row.innerHTML = '<input type="checkbox" class="lchk" data-i="'+idx+'" style="accent-color:#4f8cff">'
-        + '<div style="flex:1;min-width:0"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>'
+      const isDir = it.kind === 'dir' || it.is_dir;
+      const icon = isDir ? '📁' : '📄';
+      row.innerHTML = '<input type="checkbox" class="'+checkCls+'" data-i="'+idx+'" style="accent-color:#4f8cff"'
+        + (isDir?' disabled':'')
+        + '><div style="flex:1;min-width:0"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>'
         + '<div style="font-size:11px;color:var(--muted)"></div></div>';
-      row.querySelector('div div').textContent = it.name;
-      row.querySelectorAll('div div')[1].textContent = fmtSize(it.size);
+      row.querySelector('div div').textContent = icon + ' ' + it.name;
+      row.querySelectorAll('div div')[1].textContent = isDir ? '文件夹' : fmtSize(it.size)+(it.mod?' · '+it.mod:'');
+      if(isDir && onDirClick){
+        row.onclick = (e)=>{
+          if(e.target && e.target.type==='checkbox') return;
+          onDirClick(it);
+        };
+      }
       box.appendChild(row);
     });
   }
 
+  function renderLocal(){
+    $('localPath').textContent = localDirName || '未打开文件夹';
+    renderPane('localFiles', localList.map(x=>({
+      name:x.name, kind:x.kind, size:x.size, mod:x.mod
+    })), 'lchk', async (it)=>{
+      if(it.kind !== 'dir') return;
+      await enterLocalDir(it.name);
+    });
+  }
+
   function renderRemote(){
-    const box = $('remoteFiles');
     $('remotePath').textContent = remoteCwd || '—';
-    if(!remoteList.length){
-      box.innerHTML = '<div style="padding:20px;color:var(--muted);text-align:center;font-size:13px">空目录或点「刷新远端」</div>';
-      return;
-    }
-    box.innerHTML = '';
-    remoteList.forEach((f, idx)=>{
-      const row = document.createElement('label');
-      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;margin-bottom:4px;cursor:pointer;font-size:13px';
-      const icon = f.is_dir ? '📁' : '📄';
-      row.innerHTML = '<input type="checkbox" class="rchk" data-i="'+idx+'" style="accent-color:#4f8cff"'+(f.is_dir?' disabled':'')+'>'
-        + '<div style="flex:1;min-width:0"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>'
-        + '<div style="font-size:11px;color:var(--muted)"></div></div>';
-      row.querySelector('div div').textContent = icon + ' ' + f.name;
-      row.querySelectorAll('div div')[1].textContent = f.is_dir ? '文件夹' : fmtSize(f.size)+(f.mod?' · '+f.mod:'');
-      if (f.is_dir) {
-        row.style.cursor = 'pointer';
-        row.onclick = (e)=>{
-          if (e.target && e.target.type === 'checkbox') return;
-          remoteCwd = f.path;
-          loadRemoteFiles();
-        };
-      }
-      box.appendChild(row);
+    renderPane('remoteFiles', remoteList.map(x=>({
+      name:x.name, kind:x.is_dir?'dir':'file', size:x.size, mod:x.mod
+    })), 'rchk', (it)=>{
+      if(it.kind !== 'dir') return;
+      const src = remoteList.find(r=> r.name===it.name && r.is_dir);
+      if(!src) return;
+      remoteCwd = src.path;
+      loadRemoteFiles();
     });
   }
 
@@ -873,21 +877,90 @@ body.touch #mouseBtns{display:flex}
     return [...document.querySelectorAll('.rchk:checked')].map(el=> remoteList[+el.dataset.i]).filter(x=> x && !x.is_dir);
   }
 
-  async function uploadFile(file){
+  async function listLocalDir(dirHandle){
+    const items = [];
+    for await (const [name, h] of dirHandle.entries()){
+      if(h.kind === 'directory'){
+        items.push({ name, kind:'dir', handle:h, size:0 });
+      }else{
+        try{
+          const f = await h.getFile();
+          items.push({ name, kind:'file', handle:h, size:f.size, file:f, mod:new Date(f.lastModified).toLocaleString() });
+        }catch(_){
+          items.push({ name, kind:'file', handle:h, size:0 });
+        }
+      }
+    }
+    items.sort((a,b)=> (b.kind==='dir'?1:0)-(a.kind==='dir'?1:0) || a.name.localeCompare(b.name));
+    return items;
+  }
+
+  async function openLocalDir(){
+    if(!window.showDirectoryPicker){
+      toast('当前环境不支持选择目录，请用 Chromium/WebView2');
+      return;
+    }
+    try{
+      const h = await window.showDirectoryPicker({ mode:'readwrite' });
+      localDirHandle = h;
+      localStack = [];
+      localDirName = h.name;
+      localList = await listLocalDir(h);
+      renderLocal();
+    }catch(e){
+      if(e && e.name!=='AbortError') toast('打开失败: '+(e.message||e));
+    }
+  }
+
+  async function enterLocalDir(name){
+    if(!localDirHandle) return;
+    const target = localList.find(x=> x.name===name && x.kind==='dir');
+    if(!target) return;
+    localStack.push(localDirHandle);
+    localDirHandle = target.handle;
+    localDirName = localDirName + '/' + name;
+    localList = await listLocalDir(localDirHandle);
+    renderLocal();
+  }
+
+  async function localUp(){
+    if(!localDirHandle) { toast('请先打开本机文件夹'); return; }
+    if(!localStack.length){ toast('已在顶层'); return; }
+    localDirHandle = localStack.pop();
+    localDirName = localDirName.replace(/\/[^/]+$/, '') || localDirName;
+    localList = await listLocalDir(localDirHandle);
+    renderLocal();
+  }
+
+  async function uploadOneToRemote(file, destDir){
     const b = fileBase();
-    if(!b){ toast('请先连接设备'); return false; }
+    if(!b) throw new Error('未连接');
     const fd = new FormData();
     fd.append('file', file, file.name);
-    try{
-      let url = b.file;
-      if (remoteCwd) url += (url.includes('?')?'&':'?') + 'dest=' + encodeURIComponent(remoteCwd);
-      const r = await fetch(url, { method:'POST', headers:{'X-LR-Pin':sessionPin}, body: fd });
-      const t = await r.text();
-      if(!r.ok) throw new Error(t||('HTTP '+r.status));
-      return true;
-    }catch(e){
-      toast('上传失败 '+file.name+': '+(e.message||e));
-      return false;
+    let url = b.file;
+    if(destDir) url += (url.includes('?')?'&':'?')+'dest='+encodeURIComponent(destDir);
+    const r = await fetch(url, { method:'POST', headers:{'X-LR-Pin':sessionPin}, body:fd });
+    const t = await r.text();
+    if(!r.ok) throw new Error(t||('HTTP '+r.status));
+  }
+
+  async function remoteMkdir(path){
+    const b = fileBase();
+    if(!b || !path) return;
+    const url = '/api/mkdir' + (useProxy? ('?target='+encodeURIComponent(sessionTarget)+'&path='+encodeURIComponent(path))
+      : ('http://'+sessionTarget+'/api/mkdir?path='+encodeURIComponent(path)));
+    await fetch(useProxy? url : url, { headers:{'X-LR-Pin':sessionPin} });
+  }
+
+  async function uploadLocalDirRecursive(dirHandle, destPath){
+    await remoteMkdir(destPath);
+    for await (const [name, h] of dirHandle.entries()){
+      if(h.kind === 'directory'){
+        await uploadLocalDirRecursive(h, destPath + '/' + name);
+      }else{
+        const f = await h.getFile();
+        await uploadOneToRemote(f, destPath);
+      }
     }
   }
 
@@ -897,7 +970,7 @@ body.touch #mouseBtns{display:flex}
     $('remoteFiles').innerHTML = '<div style="padding:16px;color:var(--muted);text-align:center">加载中…</div>';
     try{
       let url = b.list;
-      if (remoteCwd) url += (url.includes('?')?'&':'?') + 'path=' + encodeURIComponent(remoteCwd);
+      if(remoteCwd) url += (url.includes('?')?'&':'?')+'path='+encodeURIComponent(remoteCwd);
       const r = await fetch(url, { headers:{'X-LR-Pin':sessionPin} });
       const t = await r.text();
       if(!r.ok) throw new Error(t||('HTTP '+r.status));
@@ -922,161 +995,77 @@ body.touch #mouseBtns{display:flex}
     return await r.blob();
   }
 
-  function browserSave(blob, name){
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = name;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(()=>URL.revokeObjectURL(a.href), 10000);
+  async function writeToLocalDir(fileName, blob){
+    if(!localDirHandle) throw new Error('未打开本机文件夹');
+    const h = await localDirHandle.getFileHandle(fileName, { create:true });
+    const w = await h.createWritable();
+    await w.write(blob);
+    await w.close();
   }
 
-  async function saveBlobAs(blob, name){
-    // Native save dialog (WebView2 / Chromium) — not browser download bar
-    if (window.showSaveFilePicker) {
-      try {
-        const handle = await window.showSaveFilePicker({
-          suggestedName: name,
-          types: [{ description: 'File', accept: { '*/*': [] } }]
-        });
-        const w = await handle.createWritable();
-        await w.write(blob);
-        await w.close();
-        return true;
-      } catch (e) {
-        if (e && e.name === 'AbortError') return false;
-        // fall through
-      }
-    }
-    browserSave(blob, name);
-    return true;
-  }
-
-  async function downloadRemote(f){
-    try{
-      const blob = await fetchRemoteBlob(f);
-      if(!blob) return false;
-      return await saveBlobAs(blob, f.name);
-    }catch(e){
-      toast('下载失败 '+f.name+': '+(e.message||e));
-      return false;
-    }
-  }
-
+  $('btnOpenLocalDir').onclick = openLocalDir;
+  $('btnLocalUp').onclick = localUp;
   $('btnSendFile').onclick = ()=>{
     if(!connected){ toast('未连接'); return; }
     $('filesPanel').classList.remove('hidden');
-    remoteCwd = remoteCwd || '';
     renderLocal();
     loadRemoteFiles();
   };
-  $('btnPickFiles').onclick = ()=> $('filePicker').click();
-  $('btnPickFolder').onclick = ()=> pickFolder();
-  $('btnRemoteUp').onclick = ()=>{
-    if (remoteCwd === 'roots') { toast('已在磁盘列表'); return; }
-    if (remoteParent) {
-      remoteCwd = remoteParent;
-    } else {
-      remoteCwd = 'roots';
-    }
-    loadRemoteFiles();
-  };
-  $('btnRemoteHome').onclick = ()=>{
-    remoteCwd = remoteHome || '';
-    loadRemoteFiles();
-  };
-  $('btnRemoteRoots').onclick = ()=>{
-    remoteCwd = 'roots';
-    loadRemoteFiles();
-  };
-  function addPickedFiles(fileArr){
-    const seen = new Set(localList.map(x=> x.name+':'+x.size));
-    [...fileArr].forEach(f=>{
-      const key = f.name+':'+f.size;
-      if(!seen.has(key)){
-        localList.push({ name: f.name, size: f.size, file: f });
-        seen.add(key);
-      }
-    });
-    renderLocal();
-  }
-  $('filePicker').onchange = ()=>{ addPickedFiles($('filePicker').files); $('filePicker').value=''; };
 
-  async function pickFolder(){
-    if (window.showDirectoryPicker) {
-      try {
-        const dir = await window.showDirectoryPicker();
-        const files = [];
-        async function walk(handle){
-          for await (const [name, h] of handle.entries()) {
-            if (h.kind === 'file') {
-              const f = await h.getFile();
-              files.push(new File([f], name, { type: f.type, lastModified: f.lastModified }));
-            } else if (h.kind === 'directory') {
-              await walk(h);
-            }
-          }
+  $('btnUploadSel').onclick = async ()=>{
+    if(!connected){ toast('未连接'); return; }
+    const sel = selectedLocal();
+    if(!sel.length){ toast('请在左侧勾选要上传的项'); return; }
+    if(!remoteCwd){ toast('请先在右侧进入目标目录'); return; }
+    toast('上传 '+sel.length+' 项到 '+remoteCwd+' …');
+    let ok=0;
+    for(const it of sel){
+      try{
+        if(it.kind==='dir'){
+          // upload all files in folder flatly under dest folder name
+          const dest = remoteCwd + '/' + it.name;
+          await uploadLocalDirRecursive(it.handle, dest);
+        }else{
+          const f = await it.handle.getFile();
+          await uploadOneToRemote(f, remoteCwd);
         }
-        await walk(dir);
-        if (!files.length) { toast('文件夹为空'); return; }
-        addPickedFiles(files);
-        toast('已加入 '+files.length+' 个文件');
-        return;
-      } catch (e) {
-        if (e && e.name === 'AbortError') return;
+        ok++;
+      }catch(e){
+        toast('上传失败 '+it.name+': '+(e.message||e));
       }
     }
-    const inp = document.createElement('input');
-    inp.type = 'file';
-    inp.webkitdirectory = true;
-    inp.multiple = true;
-    inp.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0';
-    document.body.appendChild(inp);
-    inp.onchange = ()=>{
-      if (inp.files && inp.files.length) addPickedFiles(inp.files);
-      inp.remove();
-    };
-    inp.click();
-  }
-  $('btnUploadSel').onclick = async ()=>{
-    const sel = selectedLocal();
-    if(!sel.length){ toast('请在左侧勾选要上传的文件'); return; }
-    toast('上传 '+sel.length+' 个文件…');
-    let ok=0;
-    for(const it of sel){ if(await uploadFile(it.file)) ok++; }
     toast('上传完成 '+ok+'/'+sel.length);
     loadRemoteFiles();
   };
+
   $('btnDownloadSel').onclick = async ()=>{
+    if(!connected){ toast('未连接'); return; }
     const sel = selectedRemote();
-    if(!sel.length){ toast('请在右侧勾选要下载的文件（文件夹请进入后再选）'); return; }
-    // multi-file: pick one folder and write all (native, not browser bar)
-    if (sel.length > 1 && window.showDirectoryPicker) {
-      let dir;
-      try { dir = await window.showDirectoryPicker({ mode: 'readwrite' }); }
-      catch { return; }
-      let ok = 0;
-      for (const f of sel) {
-        try {
-          const blob = await fetchRemoteBlob(f);
-          if (!blob) continue;
-          const h = await dir.getFileHandle(f.name, { create: true });
-          const w = await h.createWritable();
-          await w.write(blob);
-          await w.close();
-          ok++;
-        } catch(e) {
-          toast('写入失败 '+f.name);
-        }
-      }
-      toast('已保存到所选文件夹 '+ok+'/'+sel.length);
-      return;
-    }
-    toast('下载 '+sel.length+' 个文件…');
+    if(!sel.length){ toast('请在右侧勾选要下载的文件'); return; }
+    if(!localDirHandle){ toast('请先「打开本机文件夹」'); return; }
+    toast('下载 '+sel.length+' 个文件到本机目录…');
     let ok=0;
-    for(const f of sel){ if(await downloadRemote(f)) ok++; }
-    toast('下载完成 '+ok+'/'+sel.length);
+    for(const f of sel){
+      try{
+        const blob = await fetchRemoteBlob(f);
+        if(!blob) continue;
+        await writeToLocalDir(f.name, blob);
+        ok++;
+      }catch(e){
+        toast('下载失败 '+f.name+': '+(e.message||e));
+      }
+    }
+    toast('已下载 '+ok+'/'+sel.length+' → '+localDirName);
+    localList = await listLocalDir(localDirHandle);
+    renderLocal();
   };
-  $('btnListRemote').onclick = ()=> loadRemoteFiles();
+
+  $('btnRemoteUp2').onclick = ()=>{
+    if(remoteCwd === 'roots'){ toast('已在磁盘列表'); return; }
+    remoteCwd = remoteParent || 'roots';
+    loadRemoteFiles();
+  };
+  $('btnRemoteRoots').onclick = ()=>{ remoteCwd='roots'; loadRemoteFiles(); };
   $('btnCloseFiles').onclick = ()=> $('filesPanel').classList.add('hidden');
 
   // ---- fullscreen ----
