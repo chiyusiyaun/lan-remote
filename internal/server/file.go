@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -147,4 +148,50 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Disposition", "attachment; filename="+filepath.Base(clean))
 	http.ServeFile(w, r, clean)
+}
+
+// handleListFiles lists files in the receive directory (PIN required).
+func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
+	pin := r.Header.Get("X-LR-Pin")
+	if pin == "" {
+		pin = r.URL.Query().Get("pin")
+	}
+	if s.PIN() == "" || pin != s.PIN() {
+		http.Error(w, "bad pin", 403)
+		return
+	}
+	dir, err := receiveDir()
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	type item struct {
+		Name string `json:"name"`
+		Path string `json:"path"`
+		Size int64  `json:"size"`
+		Mod  string `json:"mod"`
+	}
+	files := make([]item, 0, len(ents))
+	for _, e := range ents {
+		if e.IsDir() {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		files = append(files, item{
+			Name: e.Name(),
+			Path: filepath.Join(dir, e.Name()),
+			Size: info.Size(),
+			Mod:  info.ModTime().Format("2006-01-02 15:04"),
+		})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "dir": dir, "files": files})
 }

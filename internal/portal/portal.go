@@ -51,6 +51,8 @@ func (s *Server) ListenAndServe() error {
 	mux.HandleFunc("/api/status", s.handleStatus)
 	mux.HandleFunc("/api/peers", s.handlePeers)
 	mux.HandleFunc("/api/file", s.handleFileRelay)
+	mux.HandleFunc("/api/files", s.handleFilesRelay)
+	mux.HandleFunc("/api/download", s.handleDownloadRelay)
 	mux.HandleFunc("/proxy", s.handleProxy)
 
 	ln, err := net.Listen("tcp", s.cfg.Addr)
@@ -193,6 +195,55 @@ func (s *Server) handleFileRelay(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(resp.StatusCode)
 	_, _ = io.Copy(w, resp.Body)
+}
+
+func (s *Server) relayGET(w http.ResponseWriter, r *http.Request, upstreamPath string) {
+	target := r.URL.Query().Get("target")
+	if target == "" {
+		http.Error(w, "target required", 400)
+		return
+	}
+	if !strings.Contains(target, ":") {
+		target += ":8765"
+	}
+	q := r.URL.Query()
+	q.Del("target")
+	u := "http://" + target + upstreamPath
+	if enc := q.Encode(); enc != "" {
+		u += "?" + enc
+	}
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, u, nil)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	if pin := r.Header.Get("X-LR-Pin"); pin != "" {
+		req.Header.Set("X-LR-Pin", pin)
+	}
+	if pin := q.Get("pin"); pin != "" {
+		req.Header.Set("X-LR-Pin", pin)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		http.Error(w, "upstream: "+err.Error(), 502)
+		return
+	}
+	defer resp.Body.Close()
+	for k, vs := range resp.Header {
+		for _, v := range vs {
+			w.Header().Add(k, v)
+		}
+	}
+	w.WriteHeader(resp.StatusCode)
+	_, _ = io.Copy(w, resp.Body)
+}
+
+func (s *Server) handleFilesRelay(w http.ResponseWriter, r *http.Request) {
+	s.relayGET(w, r, "/api/files")
+}
+
+func (s *Server) handleDownloadRelay(w http.ResponseWriter, r *http.Request) {
+	s.relayGET(w, r, "/api/download")
 }
 
 // silence unused in some builds
