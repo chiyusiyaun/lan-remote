@@ -9,13 +9,13 @@ import (
 
 // Data is persisted app configuration.
 type Data struct {
-	PIN        string `json:"pin"`
-	DeviceName string `json:"device_name"`
-	Hub        string `json:"hub"`         // host:port of registry, empty = self
-	HTTPPort   int    `json:"http_port"`   // control port
-	RegistryPort int  `json:"registry_port"`
-	Quality    int    `json:"quality"`
-	FPS        int    `json:"fps"`
+	PIN          string `json:"pin"`
+	DeviceName   string `json:"device_name"`
+	Hub          string `json:"hub"`           // client: registry to use; server: empty = self is hub
+	HTTPPort     int    `json:"http_port"`     // control port
+	RegistryPort int    `json:"registry_port"`
+	Quality      int    `json:"quality"`
+	FPS          int    `json:"fps"`
 }
 
 func dir() (string, error) {
@@ -34,23 +34,33 @@ func dir() (string, error) {
 	return filepath.Join(home, ".config", "lan-remote"), nil
 }
 
-func Path() string {
+// Path returns the config path for a given app role ("server" or "client").
+func Path(role string) string {
 	d, err := dir()
 	if err != nil {
-		return "lan-remote.json"
+		return "lan-remote-" + role + ".json"
 	}
-	return filepath.Join(d, "config.json")
+	name := "config.json"
+	if role != "" {
+		name = role + ".json"
+	}
+	return filepath.Join(d, name)
 }
 
-func Load() (*Data, error) {
-	p := Path()
+func defaults() *Data {
+	return &Data{HTTPPort: 8765, RegistryPort: 8760, Quality: 70, FPS: 15}
+}
+
+// Load reads config for the given role.
+func Load(role string) (*Data, error) {
+	p := Path(role)
 	b, err := os.ReadFile(p)
 	if err != nil {
-		return &Data{HTTPPort: 8765, RegistryPort: 8760, Quality: 70, FPS: 15}, nil
+		return defaults(), nil
 	}
 	var d Data
 	if err := json.Unmarshal(b, &d); err != nil {
-		return &Data{HTTPPort: 8765, RegistryPort: 8760, Quality: 70, FPS: 15}, nil
+		return defaults(), nil
 	}
 	if d.HTTPPort == 0 {
 		d.HTTPPort = 8765
@@ -67,7 +77,8 @@ func Load() (*Data, error) {
 	return &d, nil
 }
 
-func Save(d *Data) error {
+// Save writes config for the given role.
+func Save(role string, d *Data) error {
 	dirPath, err := dir()
 	if err != nil {
 		return err
@@ -79,5 +90,5 @@ func Save(d *Data) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(Path(), b, 0o600)
+	return os.WriteFile(Path(role), b, 0o600)
 }

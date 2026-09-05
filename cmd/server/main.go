@@ -1,4 +1,4 @@
-// lan-remote-server: control endpoint (screen+input) + optional registry hub.
+﻿// lan-remote-server: control endpoint (screen+input) + optional registry hub.
 package main
 
 import (
@@ -30,7 +30,7 @@ func hostname() string {
 }
 
 func main() {
-	cfg, err := config.Load()
+	cfg, err := config.Load("server")
 	if err != nil {
 		cfg = &config.Data{HTTPPort: 8765, RegistryPort: 8760, Quality: 70, FPS: 15}
 	}
@@ -62,7 +62,7 @@ func main() {
 	if cfg.DeviceName == "" {
 		cfg.DeviceName = name
 	}
-	_ = config.Save(cfg)
+	_ = config.Save("server", cfg)
 
 	hubAddr := cfg.Hub
 	isHub := hubAddr == ""
@@ -104,7 +104,7 @@ func main() {
 		},
 		OnPINChanged: func(p string) {
 			cfg.PIN = p
-			_ = config.Save(cfg)
+			_ = config.Save("server", cfg)
 			if regClient != nil {
 				regClient.SetPINSet(p != "")
 			}
@@ -150,7 +150,7 @@ func main() {
 		fmt.Printf("  Hub:      %s\n", hubAddr)
 	}
 	fmt.Printf("  PIN:      %s\n", pinDisplay(cfg.PIN))
-	fmt.Printf("  Config:   %s\n", config.Path())
+	fmt.Printf("  Config:   %s\n", config.Path("server"))
 	fmt.Println("========================================")
 
 	go func() {
@@ -184,3 +184,4 @@ func pinDisplay(p string) string {
 	}
 	return p + "  (saved)"
 }
+

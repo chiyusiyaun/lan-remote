@@ -62,11 +62,40 @@ body.touch #mouseBtns{display:flex}
 </head>
 <body>
 <div id="app">
-  <div id="screenHome" class="screen active">
+  <!-- Service IP setup -->
+  <div id="screenSetup" class="screen active">
     <div class="bar">
       <div class="brand">LAN Remote <span>Client</span></div>
-      <div class="status"><span class="dot" id="hubDot"></span><span id="hubTxt">连接注册中心…</span></div>
       <div class="spacer"></div>
+      <div class="status">连接注册中心</div>
+    </div>
+    <div class="center-wrap" style="flex:1;display:flex;align-items:center;justify-content:center;padding:24px">
+      <div class="card" style="width:min(420px,100%);background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:24px">
+        <h1 style="margin:0 0 6px;font-size:20px">输入 Service IP</h1>
+        <p style="margin:0 0 18px;color:var(--muted);font-size:13px;line-height:1.5">
+          填写运行 <b>lan-remote-server</b> 的电脑 IP（注册中心）。
+          只填 IP 即可，端口默认 8760。
+        </p>
+        <div class="field">
+          <label>Service IP / 地址</label>
+          <input id="hubInput" placeholder="例如 192.168.1.10 或 192.168.1.10:8760" autocomplete="off" inputmode="url">
+        </div>
+        <div class="actions">
+          <button class="btn primary" id="btnConnectHub">连接</button>
+        </div>
+        <div class="hint" id="hubHint" style="margin-top:12px;font-size:12px;color:var(--muted);line-height:1.5">
+          连接成功后会记住该地址，下次启动自动使用。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="screenHome" class="screen">
+    <div class="bar">
+      <div class="brand">LAN Remote <span>Client</span></div>
+      <div class="status"><span class="dot" id="hubDot"></span><span id="hubTxt">…</span></div>
+      <div class="spacer"></div>
+      <button class="btn" id="btnChangeHub">更换 Service</button>
       <button class="btn" id="btnRefresh">刷新</button>
       <button class="btn" id="btnManual">手动连接</button>
     </div>
@@ -148,19 +177,25 @@ body.touch #mouseBtns{display:flex}
   let ws=null, connected=false, screenW=1, screenH=1, peerTimer=null;
 
   function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2200);}
-  function show(id){['screenHome','screenRemote'].forEach(s=>$(s).classList.toggle('active',s===id));}
+  function show(id){['screenSetup','screenHome','screenRemote'].forEach(s=>$(s).classList.toggle('active',s===id));}
   function send(o){if(ws&&ws.readyState===1)ws.send(JSON.stringify(o));}
-  async function api(p){const r=await fetch(p);if(!r.ok)throw new Error(await r.text());return r.json();}
+  async function api(p,opt){
+    const r=await fetch(p,opt);
+    const text=await r.text();
+    if(!r.ok)throw new Error(text||('HTTP '+r.status));
+    try{return JSON.parse(text)}catch{return {}}
+  }
 
   async function loadPeers(){
     try{
       const st=await api('/api/status');
+      if(!st.hub){ show('screenSetup'); return; }
       $('hubDot').classList.add('on');
-      $('hubTxt').textContent='注册中心 '+st.hub;
+      $('hubTxt').textContent='Service '+st.hub;
       const data=await api('/api/devices');
       const peers=data.devices||[];
       const list=$('peerList');
-      if(!peers.length){list.innerHTML='<div class="empty">暂无在线设备。请确认 server 已启动并注册到同一 hub。</div>';return;}
+      if(!peers.length){list.innerHTML='<div class="empty">暂无在线设备。请确认 server 已启动并注册到同一 Service。</div>';return;}
       list.innerHTML='';
       peers.forEach(p=>{
         const el=document.createElement('div');
@@ -173,10 +208,32 @@ body.touch #mouseBtns{display:flex}
       });
     }catch(e){
       $('hubDot').classList.remove('on');
-      $('hubTxt').textContent='注册中心不可达';
-      $('peerList').innerHTML='<div class="empty">无法连接注册中心：'+e.message+'</div>';
+      $('hubTxt').textContent='Service 不可达';
+      $('peerList').innerHTML='<div class="empty">无法连接：'+e.message+'</div>';
     }
   }
+
+  async function setHub(hub){
+    const btn=$('btnConnectHub');
+    btn.disabled=true; $('hubHint').textContent='正在连接…';
+    try{
+      await api('/api/hub',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hub})});
+      toast('已连接 Service');
+      show('screenHome');
+      loadPeers();
+      if(peerTimer)clearInterval(peerTimer);
+      peerTimer=setInterval(loadPeers,4000);
+    }catch(e){
+      $('hubHint').textContent=e.message||'连接失败';
+      toast('连接失败');
+    }finally{
+      btn.disabled=false;
+    }
+  }
+
+  $('btnConnectHub').onclick=()=>setHub($('hubInput').value.trim());
+  $('hubInput').addEventListener('keydown',e=>{if(e.key==='Enter')setHub($('hubInput').value.trim())});
+  $('btnChangeHub').onclick=()=>{ show('screenSetup'); $('hubInput').focus(); };
 
   function fit(){
     if(!screenW||!screenH)return;
@@ -281,8 +338,18 @@ body.touch #mouseBtns{display:flex}
   $('btnKeys').onclick=()=>{$('keysPanel').classList.remove('hidden');kb.focus()};
   $('btnCloseKeys').onclick=()=>$('keysPanel').classList.add('hidden');
 
-  loadPeers();
-  peerTimer=setInterval(loadPeers,4000);
+  // boot: if hub already saved, go to home; else ask for Service IP
+  api('/api/status').then(st=>{
+    if(st.hub){
+      $('hubInput').value=st.hub;
+      show('screenHome');
+      loadPeers();
+      peerTimer=setInterval(loadPeers,4000);
+    }else{
+      show('screenSetup');
+      $('hubInput').focus();
+    }
+  }).catch(()=>{ show('screenSetup'); $('hubInput').focus(); });
 })();
 </script>
 </body>

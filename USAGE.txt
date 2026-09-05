@@ -1,59 +1,32 @@
-LAN Remote Desktop v1.1.0
+﻿LAN Remote Desktop v1.2.0
 =========================
 
-拆分后的两个程序
-----------------
-lan-remote-server   被控端 / 注册中心
-                    截屏推流 + 键鼠注入 + 可选 hub(注册口)
+两个程序
+--------
+lan-remote-server   被控端 / 注册中心（Service）
+lan-remote-client   主控端（在界面输入 Service IP）
 
-lan-remote-client   主控端
-                    从 hub 拉设备列表，远程控制
+用法
+----
+【A：Service + 被控】
+  lan-remote-server.exe
+  界面设置 PIN（保存到 server.json）
+
+【B：主控】
+  lan-remote-client.exe
+  启动后输入 Service IP（如 192.168.1.10）→ 连接
+  在设备列表点 A → 输入 A 的 PIN
+  地址会记住，下次启动自动用；顶栏可「更换 Service」
 
 端口
 ----
-  8760  注册口（hub）
-  8765  控制口（server）
+  8760  Service 注册口
+  8765  控制口
 
-快速开始
+配置文件
 --------
-【A 电脑：做 hub + 被控】
-  lan-remote-server.exe
-  双击后设置 PIN（会保存到配置）
+  Windows  %APPDATA%\lan-remote\server.json
+           %APPDATA%\lan-remote\client.json
+  Linux    ~/.config/lan-remote/
 
-【B 电脑 / 本机：主控】
-  lan-remote-client.exe -hub 192.168.1.10:8760
-  在列表里点 A，输入 A 的 PIN
-
-【仅注册服务】
-  lan-remote-server.exe -hub-only
-
-命令行
-------
-server:
-  -port 8765   控制口
-  -registry 8760  注册口
-  -hub host:port  注册到他人 hub（本机不当 hub）
-  -pin xxx     设置并保存 PIN
-  -no-gui      无窗口
-
-client:
-  -hub host:port  必填，注册中心地址
-  -ui 0        本地 UI 端口
-  -no-gui      用浏览器打开
-
-PIN 保存位置
-------------
-  Windows  %APPDATA%\lan-remote\config.json
-  Linux    ~/.config/lan-remote/config.json
-
-防火墙
-------
-  TCP 8765 控制
-  TCP 8760 注册
-  可用 open-firewall.bat（管理员运行）
-
-平台
-----
-  Windows  原生窗口 WebView2；server 用 Win32 截屏/输入
-  Linux    server 需 scrot/imagemagick + xdotool；client 用浏览器
-  手机     浏览器打开 http://serverIP:8765 亦可主控
+防火墙：管理员运行 open-firewall.bat
