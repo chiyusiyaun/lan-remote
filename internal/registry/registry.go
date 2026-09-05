@@ -121,6 +121,24 @@ func (s *Server) sweepLoop() {
 	}
 }
 
+func isUsableIP(ip string) bool {
+	if ip == "" {
+		return false
+	}
+	p := net.ParseIP(ip)
+	if p == nil {
+		return false
+	}
+	// 127.0.0.0/8 and ::1 are useless to other machines
+	if p.IsLoopback() {
+		return false
+	}
+	if p.IsUnspecified() || p.IsMulticast() {
+		return false
+	}
+	return p.To4() != nil // IPv4 only for now
+}
+
 func (s *Server) upsert(req registerReq, sourceIP string) Device {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -132,7 +150,7 @@ func (s *Server) upsert(req registerReq, sourceIP string) Device {
 	ips := make([]string, 0, len(req.IPs)+2)
 	seen := map[string]bool{}
 	addIP := func(ip string) {
-		if ip == "" || seen[ip] {
+		if seen[ip] || !isUsableIP(ip) {
 			return
 		}
 		seen[ip] = true
