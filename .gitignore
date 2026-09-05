@@ -1,8 +1,13 @@
 # build outputs
 /dist/
+
+# ignore binaries at repo root, but keep release/ artifacts
 *.exe
 *.zip
 *.tar.gz
+!release/**/*.exe
+!release/**/*.zip
+!release/**/*.tar.gz
 
 # logs
 *.log

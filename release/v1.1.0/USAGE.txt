@@ -1,0 +1,39 @@
+﻿LAN Remote Desktop v1.1.0
+=========================
+
+双端口架构
+----------
+  注册口 :8760  设备上线注册 / 心跳 / 在线列表
+  控制口 :8765  截屏推流 + 键鼠输入 + 本机界面
+
+PIN 会保存到本机配置，下次启动自动加载：
+  Windows  %APPDATA%\lan-remote\config.json
+  Linux    ~/.config/lan-remote/config.json
+
+用法
+----
+【中心节点 / 一台常开的电脑】
+  lan-remote-windows-amd64.exe
+  （默认自己就是注册中心）
+
+【其他电脑 / 注册到中心】
+  lan-remote-windows-amd64.exe -hub 192.168.1.10:8760
+
+【仅跑注册服务（无界面）】
+  lan-remote-windows-amd64.exe -hub-only
+
+【命令行】
+  -port      控制口，默认 8765
+  -registry  注册口，默认 8760
+  -hub       中心 host:port；留空则本机为 hub
+  -pin       指定 PIN（会写入配置）
+  -no-gui    无窗口，用浏览器
+
+互相控制
+--------
+所有节点启动后，界面「局域网设备」列出在线机器，点选并输入对方 PIN。
+
+防火墙
+------
+  TCP 8765  控制
+  TCP 8760  注册
