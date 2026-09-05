@@ -133,7 +133,16 @@ Linux 依赖：
 sudo apt install scrot imagemagick xdotool
 ```
 
-Windows WebView2：Win10/11 一般自带。
+Linux 桌面图标与菜单项：
+
+```bash
+cd lan-remote
+sudo ./packaging/linux/install-linux.sh
+# 或安装到用户目录
+./packaging/linux/install-linux.sh "$HOME/.local"
+```
+
+会安装 `.desktop` 文件和 PNG 图标到 `~/.local/share/`。Windows WebView2：Win10/11 一般自带。
 
 ## 后台运行
 
