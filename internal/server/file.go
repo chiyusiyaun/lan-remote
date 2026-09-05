@@ -99,10 +99,8 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	// optional dest dir (any path)
 	if dest := r.URL.Query().Get("dest"); dest != "" {
 		clean := filepath.Clean(dest)
-		if allowedPath(clean, "") {
-			if st, err := os.Stat(clean); err == nil && st.IsDir() {
-				dir = clean
-			}
+		if st, err := os.Stat(clean); err == nil && st.IsDir() {
+			dir = clean
 		}
 	}
 	dst := uniquePath(dir, filename)
@@ -137,12 +135,7 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "path required", 400)
 		return
 	}
-	home, _ := os.UserHomeDir()
 	clean := filepath.Clean(path)
-	if !allowedPath(clean, home) {
-		http.Error(w, "path not allowed", 403)
-		return
-	}
 	if st, err := os.Stat(clean); err != nil || st.IsDir() {
 		http.Error(w, "not found", 404)
 		return
@@ -190,10 +183,6 @@ func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	clean := filepath.Clean(root)
-	if !allowedPath(clean, home) {
-		http.Error(w, "path not allowed", 403)
-		return
-	}
 	st, err := os.Stat(clean)
 	if err != nil || !st.IsDir() {
 		http.Error(w, "not a directory", 400)

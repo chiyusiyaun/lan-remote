@@ -362,6 +362,10 @@ body.touch #mouseBtns{display:flex}
       </div>
       <div style="flex:1;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#12151c">
         <div style="padding:8px 12px;border-bottom:1px solid var(--line);font-size:12px;color:var(--muted);font-weight:600">远端目录（右）</div>
+        <div style="display:flex;gap:6px;padding:6px 12px;border-bottom:1px solid var(--line)">
+          <input id="remotePathInput" placeholder="任意路径，如 C:\ 或 /home" style="flex:1;min-width:0;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:#12151c;color:var(--text);font-size:12px">
+          <button class="btn" id="btnGoRemotePath" style="padding:4px 8px;font-size:12px">跳转</button>
+        </div>
         <div id="remotePath" style="padding:6px 12px;font-size:11px;color:var(--muted);border-bottom:1px solid var(--line);word-break:break-all">—</div>
         <div id="remoteFiles" style="flex:1;overflow:auto;padding:6px"></div>
       </div>
@@ -1066,6 +1070,15 @@ body.touch #mouseBtns{display:flex}
     loadRemoteFiles();
   };
   $('btnRemoteRoots').onclick = ()=>{ remoteCwd='roots'; loadRemoteFiles(); };
+  $('btnGoRemotePath').onclick = ()=>{
+    const p = ($('remotePathInput').value||'').trim();
+    if(!p){ toast('请输入路径'); return; }
+    remoteCwd = p;
+    loadRemoteFiles();
+  };
+  $('remotePathInput').addEventListener('keydown', e=>{
+    if(e.key==='Enter') $('btnGoRemotePath').click();
+  });
   $('btnCloseFiles').onclick = ()=> $('filesPanel').classList.add('hidden');
 
   // ---- fullscreen ----
