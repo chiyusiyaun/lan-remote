@@ -17,12 +17,25 @@ type Client struct {
 }
 
 func NewClient(hub string, name, ip string, httpPort int, pinSet bool, version string) *Client {
+	return NewClientMulti(hub, name, []string{ip}, httpPort, pinSet, version)
+}
+
+func NewClientMulti(hub string, name string, ips []string, httpPort int, pinSet bool, version string) *Client {
+	primary := ""
+	if len(ips) > 0 {
+		primary = ips[0]
+	}
+	id := primary
+	if id == "" {
+		id = "self"
+	}
 	return &Client{
 		hub: hub,
 		self: registerReq{
-			ID:       ip + ":" + itoa(httpPort),
+			ID:       id + ":" + itoa(httpPort),
 			Name:     name,
-			IP:       ip,
+			IP:       primary,
+			IPs:      ips,
 			HTTPPort: httpPort,
 			PINSet:   pinSet,
 			Version:  version,

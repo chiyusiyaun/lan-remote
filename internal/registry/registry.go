@@ -18,21 +18,24 @@ const (
 type Device struct {
 	ID       string    `json:"id"`
 	Name     string    `json:"name"`
-	IP       string    `json:"ip"`
+	IP       string    `json:"ip"`   // primary / preferred
+	IPs      []string  `json:"ips"`  // all NICs
 	HTTPPort int       `json:"http_port"`
 	PINSet   bool      `json:"pin_set"`
 	Version  string    `json:"version"`
 	Seen     time.Time `json:"seen"`
-	Addr     string    `json:"addr"` // ip:http_port
+	Addr     string    `json:"addr"`   // ip:http_port (preferred)
+	Addrs    []string  `json:"addrs"`  // all ip:port candidates
 }
 
 type registerReq struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	IP       string `json:"ip"`
-	HTTPPort int    `json:"http_port"`
-	PINSet   bool   `json:"pin_set"`
-	Version  string `json:"version"`
+	ID       string   `json:"id"`
+	Name     string   `json:"name"`
+	IP       string   `json:"ip"`
+	IPs      []string `json:"ips"`
+	HTTPPort int      `json:"http_port"`
+	PINSet   bool     `json:"pin_set"`
+	Version  string   `json:"version"`
 }
 
 // Server is the LAN directory / registry on its own port.
@@ -118,22 +121,55 @@ func (s *Server) sweepLoop() {
 	}
 }
 
-func (s *Server) upsert(req registerReq) Device {
+func (s *Server) upsert(req registerReq, sourceIP string) Device {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	id := req.ID
 	if id == "" {
 		id = req.IP + ":" + itoa(req.HTTPPort)
 	}
+
+	ips := make([]string, 0, len(req.IPs)+2)
+	seen := map[string]bool{}
+	addIP := func(ip string) {
+		if ip == "" || seen[ip] {
+			return
+		}
+		seen[ip] = true
+		ips = append(ips, ip)
+	}
+	// Prefer the IP that actually reached this hub (same L2/L3 as controller path)
+	addIP(sourceIP)
+	addIP(req.IP)
+	for _, ip := range req.IPs {
+		addIP(ip)
+	}
+
+	addrs := make([]string, 0, len(ips))
+	for _, ip := range ips {
+		addrs = append(addrs, net.JoinHostPort(ip, itoa(req.HTTPPort)))
+	}
+
+	preferred := ""
+	if len(ips) > 0 {
+		preferred = ips[0]
+	}
+	addr := ""
+	if len(addrs) > 0 {
+		addr = addrs[0]
+	}
+
 	d := &Device{
 		ID:       id,
 		Name:     req.Name,
-		IP:       req.IP,
+		IP:       preferred,
+		IPs:      ips,
 		HTTPPort: req.HTTPPort,
 		PINSet:   req.PINSet,
 		Version:  req.Version,
 		Seen:     time.Now(),
-		Addr:     net.JoinHostPort(req.IP, itoa(req.HTTPPort)),
+		Addr:     addr,
+		Addrs:    addrs,
 	}
 	s.devices[id] = d
 	return *d
@@ -152,8 +188,8 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	if req.IP == "" {
 		req.IP = clientIP(r)
 	}
-	d := s.upsert(req)
-	log.Printf("registry: + %s %s", d.Name, d.Addr)
+	d := s.upsert(req, clientIP(r))
+	log.Printf("registry: + %s %s addrs=%v", d.Name, d.Addr, d.Addrs)
 	writeJSON(w, map[string]interface{}{"ok": true, "device": d})
 }
 
@@ -170,7 +206,7 @@ func (s *Server) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
 	if req.IP == "" {
 		req.IP = clientIP(r)
 	}
-	d := s.upsert(req)
+	d := s.upsert(req, clientIP(r))
 	writeJSON(w, map[string]interface{}{"ok": true, "device": d})
 }
 

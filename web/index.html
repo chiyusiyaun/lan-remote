@@ -339,6 +339,7 @@ body.touch #mouseBtns{display:flex}
   let screenW = 1, screenH = 1;
   let currentPIN = '';
   let peerTimer = null;
+  let pendingAddrs = [];
 
   function toast(msg){
     toastEl.textContent = msg;
@@ -406,13 +407,16 @@ body.touch #mouseBtns{display:flex}
         const el = document.createElement('div');
         el.className = 'peer';
         const initial = (p.name||'?').slice(0,1).toUpperCase();
+        const addrs = (p.addrs && p.addrs.length) ? p.addrs : (p.addr ? [p.addr] : []);
         el.innerHTML = '<div class="avatar">'+initial+'</div>'
           + '<div class="meta"><div class="name"></div><div class="addr"></div></div>'
           + '<div class="go">›</div>';
         el.querySelector('.name').textContent = p.name || p.addr;
-        el.querySelector('.addr').textContent = p.addr;
+        el.querySelector('.addr').textContent = addrs.join('  ·  ');
         el.onclick = () => {
-          $('host').value = p.addr;
+          // try every NIC address until one works
+          pendingAddrs = addrs.slice();
+          $('host').value = addrs[0] || '';
           $('pin').value = '';
           $('connectPanel').classList.remove('hidden');
           $('pin').focus();
@@ -451,46 +455,74 @@ body.touch #mouseBtns{display:flex}
     host = (host||'').trim();
     if (!host) { toast('请填写地址'); return; }
     if (!/^https?:\/\//i.test(host)) host = 'http://'+host;
-    const u = new URL(host);
-    const wsProto = u.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = wsProto + '//' + u.host + '/ws';
+    let u;
+    try { u = new URL(host); } catch { toast('地址无效'); return; }
 
-    if (ws){ try{ws.close();}catch(e){} }
     showScreen('screenRemote');
-    $('remoteTitle').textContent = u.host;
     setConnected(false, '连接中…');
 
-    ws = new WebSocket(url);
-    ws.binaryType = 'arraybuffer';
-    ws.onopen = () => ws.send(JSON.stringify({type:'auth', pin: pin}));
-    ws.onmessage = (ev) => {
-      if (typeof ev.data === 'string'){
-        let m; try{ m=JSON.parse(ev.data); }catch{return;}
-        if (m.type==='auth'){
-          if (m.ok){
-            setConnected(true, '已连接');
-            toast('已连接 '+u.host);
-            send({type:'settings', quality:+$('quality').value, fps:+$('fps').value});
-          } else {
-            setConnected(false, 'PIN 错误');
-            toast('PIN 不正确');
-            try{ws.close();}catch(e){}
-          }
-        }
+    // all NIC addresses from the registry entry (device may be multi-homed)
+    let candidates = (pendingAddrs && pendingAddrs.length) ? pendingAddrs.slice() : [u.host];
+    if (candidates.indexOf(u.host) < 0) candidates.unshift(u.host);
+    pendingAddrs = [];
+    let tried = 0;
+
+    function tryNext(){
+      if (tried >= candidates.length){
+        setConnected(false, '连接失败');
+        toast('所有地址均无法连接');
         return;
       }
-      const blob = new Blob([ev.data],{type:'image/jpeg'});
-      createImageBitmap(blob).then(bmp=>{
-        if (canvas.width!==bmp.width||canvas.height!==bmp.height){
-          canvas.width=bmp.width; canvas.height=bmp.height;
-          screenW=bmp.width; screenH=bmp.height; fitCanvas();
+      const cand = candidates[tried++];
+      let chost = cand;
+      if (!/^https?:\/\//i.test(chost)) chost = 'http://'+chost;
+      let cu;
+      try { cu = new URL(chost); } catch { tryNext(); return; }
+      const curl = (cu.protocol==='https:'?'wss:':'ws:')+'//'+cu.host+'/ws';
+      $('remoteTitle').textContent = cu.host;
+      setConnected(false, '连接中… '+cu.host);
+
+      if (ws){ try{ws.close();}catch(e){} }
+      ws = new WebSocket(curl);
+      ws.binaryType = 'arraybuffer';
+      let opened = false;
+      let authed = false;
+
+      ws.onopen = () => {
+        opened = true;
+        ws.send(JSON.stringify({type:'auth', pin: pin}));
+      };
+      ws.onmessage = (ev) => {
+        if (typeof ev.data === 'string'){
+          let m; try{ m=JSON.parse(ev.data); }catch{return;}
+          if (m.type==='auth'){
+            if (m.ok){
+              authed = true;
+              setConnected(true, '已连接');
+              toast('已连接 '+cu.host);
+              send({type:'settings', quality:+$('quality').value, fps:+$('fps').value});
+            } else {
+              setConnected(false, 'PIN 错误');
+              toast('PIN 不正确');
+              try{ws.close();}catch(e){}
+            }
+          }
+          return;
         }
-        ctx.drawImage(bmp,0,0);
-        bmp.close&&bmp.close();
-      }).catch(()=>{});
-    };
-    ws.onclose = () => setConnected(false, '已断开');
-    ws.onerror = () => { toast('连接失败'); setConnected(false,'连接失败'); };
+        const blob = new Blob([ev.data],{type:'image/jpeg'});
+        createImageBitmap(blob).then(bmp=>{
+          if (canvas.width!==bmp.width||canvas.height!==bmp.height){
+            canvas.width=bmp.width; canvas.height=bmp.height;
+            screenW=bmp.width; screenH=bmp.height; fitCanvas();
+          }
+          ctx.drawImage(bmp,0,0);
+          bmp.close&&bmp.close();
+        }).catch(()=>{});
+      };
+      ws.onerror = () => { if (!opened) tryNext(); };
+      setTimeout(()=>{ if (!opened && !authed) tryNext(); }, 2000);
+    }
+    tryNext();
   }
 
   // pointer

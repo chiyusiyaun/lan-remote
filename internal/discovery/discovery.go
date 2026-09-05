@@ -246,3 +246,44 @@ func init() {
 }
 
 func PrimaryIP() string { return primaryIP() }
+
+// AllIPs returns every non-loopback IPv4 address on this machine.
+func AllIPs() []string {
+	var out []string
+	seen := map[string]bool{}
+	add := func(ip string) {
+		if ip == "" || seen[ip] {
+			return
+		}
+		seen[ip] = true
+		out = append(out, ip)
+	}
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return []string{primaryIP()}
+	}
+	for _, ifc := range ifaces {
+		if ifc.Flags&net.FlagUp == 0 || ifc.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, _ := ifc.Addrs()
+		for _, a := range addrs {
+			ipNet, ok := a.(*net.IPNet)
+			if !ok {
+				continue
+			}
+			ip := ipNet.IP.To4()
+			if ip == nil || ip.IsLoopback() {
+				continue
+			}
+			if ip[0] == 169 && ip[1] == 254 {
+				continue
+			}
+			add(ip.String())
+		}
+	}
+	if len(out) == 0 {
+		add(primaryIP())
+	}
+	return out
+}

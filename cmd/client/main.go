@@ -103,7 +103,7 @@ func main() {
 		if regClient != nil {
 			regClient.Stop()
 		}
-		regClient = registry.NewClient(hubAddr, name, ip, *httpPort, cfg.PIN != "", appVersion)
+		regClient = registry.NewClientMulti(hubAddr, name, discovery.AllIPs(), *httpPort, cfg.PIN != "", appVersion)
 		regClient.Start()
 	}
 
