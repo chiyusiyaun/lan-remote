@@ -359,12 +359,17 @@ body.touch #mouseBtns{display:flex}
         <div>⇄</div>
       </div>
       <div style="flex:1;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#12151c">
-        <div style="padding:8px 12px;border-bottom:1px solid var(--line);font-size:12px;color:var(--muted);font-weight:600">远端（右）· Downloads\lan-remote</div>
+        <div style="padding:8px 12px;border-bottom:1px solid var(--line);font-size:12px;color:var(--muted);font-weight:600;display:flex;align-items:center;gap:8px">
+          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">远端（右）</span>
+          <button class="btn" id="btnRemoteUp" style="padding:4px 8px;font-size:12px">上级</button>
+          <button class="btn" id="btnRemoteHome" style="padding:4px 8px;font-size:12px">Home</button>
+        </div>
+        <div id="remotePath" style="padding:6px 12px;font-size:11px;color:var(--muted);border-bottom:1px solid var(--line);word-break:break-all">—</div>
         <div id="remoteFiles" style="flex:1;overflow:auto;padding:6px"></div>
       </div>
     </div>
     <p style="margin:10px 0 0;color:var(--muted);font-size:12px;line-height:1.4">
-      勾选后点「上传 →」发到被控机；点「← 下载」拉到本机浏览器。远端仅显示对方接收目录中的文件。
+      左侧勾选后「上传 →」到当前远端目录；右侧可进文件夹，勾选后「← 下载」。远端可浏览用户主目录。
     </p>
   </div>
 </div>
@@ -787,7 +792,10 @@ body.touch #mouseBtns{display:flex}
 
   // ---- file transfer (dual pane) ----
   let localList = [];   // {name, size, file}
-  let remoteList = [];  // {name, path, size, mod}
+  let remoteList = [];  // {name, path, size, mod, is_dir}
+  let remoteCwd = '';   // current remote directory
+  let remoteParent = '';
+  let remoteHome = '';
 
   function fileBase(){
     if(!connected || !sessionPin || !sessionTarget) return null;
@@ -830,19 +838,29 @@ body.touch #mouseBtns{display:flex}
 
   function renderRemote(){
     const box = $('remoteFiles');
+    $('remotePath').textContent = remoteCwd || '—';
     if(!remoteList.length){
-      box.innerHTML = '<div style="padding:20px;color:var(--muted);text-align:center;font-size:13px">点「刷新远端」加载</div>';
+      box.innerHTML = '<div style="padding:20px;color:var(--muted);text-align:center;font-size:13px">空目录或点「刷新远端」</div>';
       return;
     }
     box.innerHTML = '';
     remoteList.forEach((f, idx)=>{
       const row = document.createElement('label');
       row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;margin-bottom:4px;cursor:pointer;font-size:13px';
-      row.innerHTML = '<input type="checkbox" class="rchk" data-i="'+idx+'" style="accent-color:#4f8cff">'
+      const icon = f.is_dir ? '📁' : '📄';
+      row.innerHTML = '<input type="checkbox" class="rchk" data-i="'+idx+'" style="accent-color:#4f8cff"'+(f.is_dir?' disabled':'')+'>'
         + '<div style="flex:1;min-width:0"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>'
         + '<div style="font-size:11px;color:var(--muted)"></div></div>';
-      row.querySelector('div div').textContent = f.name;
-      row.querySelectorAll('div div')[1].textContent = fmtSize(f.size)+(f.mod?' · '+f.mod:'');
+      row.querySelector('div div').textContent = icon + ' ' + f.name;
+      row.querySelectorAll('div div')[1].textContent = f.is_dir ? '文件夹' : fmtSize(f.size)+(f.mod?' · '+f.mod:'');
+      if (f.is_dir) {
+        row.style.cursor = 'pointer';
+        row.onclick = (e)=>{
+          if (e.target && e.target.type === 'checkbox') return;
+          remoteCwd = f.path;
+          loadRemoteFiles();
+        };
+      }
       box.appendChild(row);
     });
   }
@@ -851,7 +869,7 @@ body.touch #mouseBtns{display:flex}
     return [...document.querySelectorAll('.lchk:checked')].map(el=> localList[+el.dataset.i]).filter(Boolean);
   }
   function selectedRemote(){
-    return [...document.querySelectorAll('.rchk:checked')].map(el=> remoteList[+el.dataset.i]).filter(Boolean);
+    return [...document.querySelectorAll('.rchk:checked')].map(el=> remoteList[+el.dataset.i]).filter(x=> x && !x.is_dir);
   }
 
   async function uploadFile(file){
@@ -860,7 +878,9 @@ body.touch #mouseBtns{display:flex}
     const fd = new FormData();
     fd.append('file', file, file.name);
     try{
-      const r = await fetch(b.file, { method:'POST', headers:{'X-LR-Pin':sessionPin}, body: fd });
+      let url = b.file;
+      if (remoteCwd) url += (url.includes('?')?'&':'?') + 'dest=' + encodeURIComponent(remoteCwd);
+      const r = await fetch(url, { method:'POST', headers:{'X-LR-Pin':sessionPin}, body: fd });
       const t = await r.text();
       if(!r.ok) throw new Error(t||('HTTP '+r.status));
       return true;
@@ -875,11 +895,18 @@ body.touch #mouseBtns{display:flex}
     if(!b){ renderRemote(); return; }
     $('remoteFiles').innerHTML = '<div style="padding:16px;color:var(--muted);text-align:center">加载中…</div>';
     try{
-      const r = await fetch(b.list, { headers:{'X-LR-Pin':sessionPin} });
+      let url = b.list;
+      if (remoteCwd) url += (url.includes('?')?'&':'?') + 'path=' + encodeURIComponent(remoteCwd);
+      const r = await fetch(url, { headers:{'X-LR-Pin':sessionPin} });
       const t = await r.text();
       if(!r.ok) throw new Error(t||('HTTP '+r.status));
       const j = JSON.parse(t);
+      remoteCwd = j.dir || remoteCwd;
+      remoteParent = j.parent || '';
+      remoteHome = j.home || '';
       remoteList = j.files||[];
+      // dirs first
+      remoteList.sort((a,b)=> (b.is_dir?1:0)-(a.is_dir?1:0) || (a.name||'').localeCompare(b.name||''));
       renderRemote();
     }catch(e){
       $('remoteFiles').innerHTML = '<div style="padding:16px;color:var(--bad);text-align:center">'+e.message+'</div>';
@@ -909,11 +936,21 @@ body.touch #mouseBtns{display:flex}
   $('btnSendFile').onclick = ()=>{
     if(!connected){ toast('未连接'); return; }
     $('filesPanel').classList.remove('hidden');
+    remoteCwd = remoteCwd || '';
     renderLocal();
     loadRemoteFiles();
   };
   $('btnPickFiles').onclick = ()=> $('filePicker').click();
   $('btnPickFolder').onclick = ()=> pickFolder();
+  $('btnRemoteUp').onclick = ()=>{
+    if (!remoteParent) { toast('已在顶层'); return; }
+    remoteCwd = remoteParent;
+    loadRemoteFiles();
+  };
+  $('btnRemoteHome').onclick = ()=>{
+    remoteCwd = remoteHome || '';
+    loadRemoteFiles();
+  };
   function addPickedFiles(fileArr){
     const seen = new Set(localList.map(x=> x.name+':'+x.size));
     [...fileArr].forEach(f=>{
@@ -928,7 +965,6 @@ body.touch #mouseBtns{display:flex}
   $('filePicker').onchange = ()=>{ addPickedFiles($('filePicker').files); $('filePicker').value=''; };
 
   async function pickFolder(){
-    // 1) File System Access API (WebView2 / Chromium)
     if (window.showDirectoryPicker) {
       try {
         const dir = await window.showDirectoryPicker();
@@ -939,7 +975,6 @@ body.touch #mouseBtns{display:flex}
               const f = await h.getFile();
               files.push(new File([f], name, { type: f.type, lastModified: f.lastModified }));
             } else if (h.kind === 'directory') {
-              // only one level deep to keep it simple; recurse fully
               await walk(h);
             }
           }
@@ -951,10 +986,8 @@ body.touch #mouseBtns{display:flex}
         return;
       } catch (e) {
         if (e && e.name === 'AbortError') return;
-        // fall through to webkitdirectory
       }
     }
-    // 2) fallback: temporary visible webkitdirectory input
     const inp = document.createElement('input');
     inp.type = 'file';
     inp.webkitdirectory = true;
@@ -978,7 +1011,7 @@ body.touch #mouseBtns{display:flex}
   };
   $('btnDownloadSel').onclick = async ()=>{
     const sel = selectedRemote();
-    if(!sel.length){ toast('请在右侧勾选要下载的文件'); return; }
+    if(!sel.length){ toast('请在右侧勾选要下载的文件（文件夹请进入后再选）'); return; }
     toast('下载 '+sel.length+' 个文件…');
     let ok=0;
     for(const f of sel){ if(await downloadRemote(f)) ok++; }

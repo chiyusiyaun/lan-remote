@@ -95,6 +95,16 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 500)
 		return
 	}
+	// optional dest dir (must stay under home)
+	if dest := r.URL.Query().Get("dest"); dest != "" {
+		home, _ := os.UserHomeDir()
+		clean := filepath.Clean(dest)
+		if allowedPath(clean, home) {
+			if st, err := os.Stat(clean); err == nil && st.IsDir() {
+				dir = clean
+			}
+		}
+	}
 	dst := uniquePath(dir, filename)
 	out, err := os.Create(dst)
 	if err != nil {
@@ -127,20 +137,11 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "path required", 400)
 		return
 	}
-	// only allow files under Downloads/lan-remote
-	dir, err := receiveDir()
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
+	home, _ := os.UserHomeDir()
 	clean := filepath.Clean(path)
-	if !strings.HasPrefix(clean, filepath.Clean(dir)+string(os.PathSeparator)) && clean != filepath.Clean(dir) {
-		// also allow absolute path that exists if under home
-		home, _ := os.UserHomeDir()
-		if home == "" || !strings.HasPrefix(clean, home) {
-			http.Error(w, "path not allowed", 403)
-			return
-		}
+	if !allowedPath(clean, home) {
+		http.Error(w, "path not allowed", 403)
+		return
 	}
 	if st, err := os.Stat(clean); err != nil || st.IsDir() {
 		http.Error(w, "not found", 404)
@@ -150,7 +151,8 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, clean)
 }
 
-// handleListFiles lists files in the receive directory (PIN required).
+// handleListFiles lists a remote directory (PIN required).
+// Query: path (optional, default = receive dir). Includes subdirectories.
 func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
 	pin := r.Header.Get("X-LR-Pin")
 	if pin == "" {
@@ -160,38 +162,75 @@ func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad pin", 403)
 		return
 	}
-	dir, err := receiveDir()
-	if err != nil {
-		http.Error(w, err.Error(), 500)
+
+	home, _ := os.UserHomeDir()
+	root := r.URL.Query().Get("path")
+	if root == "" {
+		d, err := receiveDir()
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		root = d
+	}
+
+	clean := filepath.Clean(root)
+	if !allowedPath(clean, home) {
+		http.Error(w, "path not allowed", 403)
 		return
 	}
-	ents, err := os.ReadDir(dir)
+	st, err := os.Stat(clean)
+	if err != nil || !st.IsDir() {
+		http.Error(w, "not a directory", 400)
+		return
+	}
+
+	ents, err := os.ReadDir(clean)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
 	type item struct {
-		Name string `json:"name"`
-		Path string `json:"path"`
-		Size int64  `json:"size"`
-		Mod  string `json:"mod"`
+		Name  string `json:"name"`
+		Path  string `json:"path"`
+		Size  int64  `json:"size"`
+		Mod   string `json:"mod"`
+		IsDir bool   `json:"is_dir"`
 	}
-	files := make([]item, 0, len(ents))
+	items := make([]item, 0, len(ents))
 	for _, e := range ents {
-		if e.IsDir() {
-			continue
-		}
 		info, err := e.Info()
 		if err != nil {
 			continue
 		}
-		files = append(files, item{
-			Name: e.Name(),
-			Path: filepath.Join(dir, e.Name()),
-			Size: info.Size(),
-			Mod:  info.ModTime().Format("2006-01-02 15:04"),
+		items = append(items, item{
+			Name:  e.Name(),
+			Path:  filepath.Join(clean, e.Name()),
+			Size:  info.Size(),
+			Mod:   info.ModTime().Format("2006-01-02 15:04"),
+			IsDir: e.IsDir(),
 		})
 	}
+	parent := filepath.Dir(clean)
+	if parent == clean {
+		parent = ""
+	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "dir": dir, "files": files})
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"ok":     true,
+		"dir":    clean,
+		"parent": parent,
+		"home":   home,
+		"files":  items,
+	})
+}
+
+func allowedPath(p, home string) bool {
+	p = filepath.Clean(p)
+	if home == "" {
+		return false
+	}
+	// allow anywhere under user home
+	homeC := filepath.Clean(home)
+	return p == homeC || strings.HasPrefix(p, homeC+string(os.PathSeparator))
 }

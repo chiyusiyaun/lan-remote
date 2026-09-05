@@ -170,9 +170,11 @@ func (s *Server) handleFileRelay(w http.ResponseWriter, r *http.Request) {
 		target += ":8765"
 	}
 	pin := r.Header.Get("X-LR-Pin")
+	q := r.URL.Query()
+	q.Del("target")
 	upURL := "http://" + target + "/api/file"
-	if pin != "" {
-		// keep pin header
+	if enc := q.Encode(); enc != "" {
+		upURL += "?" + enc
 	}
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, upURL, r.Body)
 	if err != nil {
