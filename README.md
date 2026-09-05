@@ -2,6 +2,8 @@
 
 局域网远程桌面控制。Windows / Linux 互控，手机浏览器可作主控端。
 
+**下载安装包 → [Releases](https://github.com/hyc-yuchen/lan-remote/releases/latest)**
+
 ```mermaid
 graph LR
   subgraph S [lan-remote-server 注册中心]
@@ -32,6 +34,16 @@ graph LR
 - 多网卡机器会注册**全部 IPv4**，连接时自动逐个尝试。
 
 ## 快速开始
+
+从 **[Releases](https://github.com/hyc-yuchen/lan-remote/releases/latest)** 下载：
+
+| 文件 | 说明 |
+|------|------|
+| `lan-remote-server.exe` | 中心机（注册中心）Windows |
+| `lan-remote-client.exe` | 各电脑 Windows |
+| `lan-remote-server-linux` / `lan-remote-client-linux` | Linux |
+| `open-firewall.bat` | 防火墙放行（管理员运行） |
+| `*-windows.zip` / `*-linux.zip` | 打包下载 |
 
 ### 1. 启动注册中心（一台常开的电脑）
 
@@ -154,7 +166,7 @@ GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w" -o dist/lan-remo
 make server client
 ```
 
-预编译包见 [`release/`](release/) 目录。
+预编译包请到 **[Releases](https://github.com/hyc-yuchen/lan-remote/releases)** 下载，不要从源码树里找安装包。
 
 ## 安全说明
 
@@ -174,7 +186,6 @@ internal/server/     HTTP + WebSocket 控制协议 + 内嵌网页
 internal/config/     配置读写
 internal/appwin/     WebView2 / 浏览器窗口
 web/                 网页源码（构建时 embed）
-release/             发布二进制
 ```
 
 ## 协议简述

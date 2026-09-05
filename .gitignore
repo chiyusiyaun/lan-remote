@@ -21,3 +21,6 @@ Thumbs.db
 
 # local helper copies at repo root
 /open-firewall.bat
+
+# binaries live on GitHub Releases only
+/release/
