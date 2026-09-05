@@ -41,7 +41,8 @@ graph LR
 |------|------|
 | `lan-remote-server.exe` | 中心机（注册中心 + 门户）Windows |
 | `lan-remote-client.exe` | 各电脑 Windows |
-| `lan-remote-server-linux` / `lan-remote-client-linux` | Linux |
+| `lan-remote_1.2.0_amd64.deb` | Linux Debian/Ubuntu 一键安装 |
+| `lan-remote-*-linux` | Linux 裸二进制 |
 | `open-firewall.bat` | 防火墙放行（管理员运行） |
 
 ### 1. 中心机
@@ -133,16 +134,24 @@ Linux 依赖：
 sudo apt install scrot imagemagick xdotool
 ```
 
-Linux 桌面图标与菜单项：
+Linux 安装（推荐 Debian/Ubuntu）：
 
 ```bash
-cd lan-remote
-sudo ./packaging/linux/install-linux.sh
-# 或安装到用户目录
-./packaging/linux/install-linux.sh "$HOME/.local"
+sudo dpkg -i lan-remote_1.2.0_amd64.deb
+# 若缺依赖：sudo apt-get install -f
 ```
 
-会安装 `.desktop` 文件和 PNG 图标到 `~/.local/share/`。Windows WebView2：Win10/11 一般自带。
+通用 Linux（解压后）：
+
+```bash
+sudo ./install.sh
+```
+
+Linux 依赖（被控需要）：
+
+```bash
+sudo apt install scrot imagemagick xdotool
+```
 
 ## 后台运行
 
