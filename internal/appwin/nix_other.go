@@ -15,10 +15,10 @@ import (
 
 func openWindow(title, url string, w, h int) bool { return false }
 
-func runWithTray(title, url string, w, h int, startHidden bool) {
-	// Linux: try tray if desktop session exists; always open browser for UI
+func runWithTray(title, url string, w, h int, startHidden bool, icon []byte) {
 	tray.Run(tray.Options{
 		Tooltip: title,
+		Icon:    icon,
 		OnOpen:  func() { openBrowser(url) },
 		OnQuit:  func() { os.Exit(0) },
 	})

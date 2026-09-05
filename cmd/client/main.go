@@ -236,10 +236,10 @@ func main() {
 	if *bg {
 		go func() {
 			time.Sleep(300 * time.Millisecond)
-			appwin.RunWithTray("LAN Remote", localURL, 1100, 760, true)
+			appwin.RunWithTray("LAN Remote Client", localURL, 1100, 760, true, appwin.IconClient)
 		}()
 		appwin.WaitSignal()
 		return
 	}
-	appwin.RunWithTray("LAN Remote", localURL, 1100, 760, false)
+	appwin.RunWithTray("LAN Remote Client", localURL, 1100, 760, false, appwin.IconClient)
 }

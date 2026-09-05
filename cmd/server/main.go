@@ -89,12 +89,12 @@ func main() {
 		// headless: tray only (Windows/Linux desktop); else just wait
 		go func() {
 			time.Sleep(300 * time.Millisecond)
-			appwin.RunWithTray("LAN Remote Server", adminURL, 900, 640, true)
+			appwin.RunWithTray("LAN Remote Server", adminURL, 900, 640, true, appwin.IconServer)
 		}()
 		appwin.WaitSignal()
 		return
 	}
 
 	// GUI: window + tray (close window → minimize to tray)
-	appwin.RunWithTray("LAN Remote Server", adminURL, 960, 680, false)
+	appwin.RunWithTray("LAN Remote Server", adminURL, 960, 680, false, appwin.IconServer)
 }

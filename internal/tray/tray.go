@@ -9,6 +9,7 @@ import (
 
 type Options struct {
 	Tooltip string
+	Icon    []byte // optional ICO bytes; default uses server icon
 	OnOpen  func()
 	OnHide  func()
 	OnQuit  func()
@@ -48,7 +49,11 @@ func onReady() {
 	}
 	systray.SetTitle("LR")
 	systray.SetTooltip(title)
-	systray.SetIcon(iconBytes)
+	if len(optsKeep.Icon) > 0 {
+		systray.SetIcon(optsKeep.Icon)
+	} else {
+		systray.SetIcon(iconBytes)
+	}
 
 	mOpen := systray.AddMenuItem("显示窗口", "Show window")
 	mHide := systray.AddMenuItem("隐藏到托盘", "Hide to tray")

@@ -5,6 +5,7 @@ go 1.24.5
 require github.com/gorilla/websocket v1.5.3
 
 require (
+	github.com/akavel/rsrc v0.10.2 // indirect
 	github.com/energye/systray v1.0.3 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/jchv/go-webview2 v0.0.0-20260205173254-56598839c808 // indirect

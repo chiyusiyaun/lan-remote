@@ -162,11 +162,12 @@ func openWindow(title, url string, w, h int) bool {
 	return true
 }
 
-func runWithTray(title, url string, w, h int, startHidden bool) {
+func runWithTray(title, url string, w, h int, startHidden bool, icon []byte) {
 	st := &winState{url: url, title: title, w: w, h: h}
 
 	tray.Run(tray.Options{
 		Tooltip: title,
+		Icon:    icon,
 		OnOpen:  st.showOrOpen,
 		OnHide:  st.hide,
 		OnQuit:  func() { os.Exit(0) },
