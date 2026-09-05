@@ -363,13 +363,14 @@ body.touch #mouseBtns{display:flex}
           <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">远端（右）</span>
           <button class="btn" id="btnRemoteUp" style="padding:4px 8px;font-size:12px">上级</button>
           <button class="btn" id="btnRemoteHome" style="padding:4px 8px;font-size:12px">Home</button>
+          <button class="btn" id="btnRemoteRoots" style="padding:4px 8px;font-size:12px">磁盘</button>
         </div>
         <div id="remotePath" style="padding:6px 12px;font-size:11px;color:var(--muted);border-bottom:1px solid var(--line);word-break:break-all">—</div>
         <div id="remoteFiles" style="flex:1;overflow:auto;padding:6px"></div>
       </div>
     </div>
     <p style="margin:10px 0 0;color:var(--muted);font-size:12px;line-height:1.4">
-      左侧勾选后「上传 →」到当前远端目录；右侧可进文件夹，勾选后「← 下载」。远端可浏览用户主目录。
+      左侧勾选后「上传 →」到当前远端目录；右侧可进文件夹/磁盘，勾选文件后「← 下载」。远端可访问本机全部路径。
     </p>
   </div>
 </div>
@@ -905,7 +906,6 @@ body.touch #mouseBtns{display:flex}
       remoteParent = j.parent || '';
       remoteHome = j.home || '';
       remoteList = j.files||[];
-      // dirs first
       remoteList.sort((a,b)=> (b.is_dir?1:0)-(a.is_dir?1:0) || (a.name||'').localeCompare(b.name||''));
       renderRemote();
     }catch(e){
@@ -943,12 +943,20 @@ body.touch #mouseBtns{display:flex}
   $('btnPickFiles').onclick = ()=> $('filePicker').click();
   $('btnPickFolder').onclick = ()=> pickFolder();
   $('btnRemoteUp').onclick = ()=>{
-    if (!remoteParent) { toast('已在顶层'); return; }
-    remoteCwd = remoteParent;
+    if (remoteCwd === 'roots') { toast('已在磁盘列表'); return; }
+    if (remoteParent) {
+      remoteCwd = remoteParent;
+    } else {
+      remoteCwd = 'roots';
+    }
     loadRemoteFiles();
   };
   $('btnRemoteHome').onclick = ()=>{
     remoteCwd = remoteHome || '';
+    loadRemoteFiles();
+  };
+  $('btnRemoteRoots').onclick = ()=>{
+    remoteCwd = 'roots';
     loadRemoteFiles();
   };
   function addPickedFiles(fileArr){

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -95,11 +96,10 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	// optional dest dir (must stay under home)
+	// optional dest dir (any path)
 	if dest := r.URL.Query().Get("dest"); dest != "" {
-		home, _ := os.UserHomeDir()
 		clean := filepath.Clean(dest)
-		if allowedPath(clean, home) {
+		if allowedPath(clean, "") {
 			if st, err := os.Stat(clean); err == nil && st.IsDir() {
 				dir = clean
 			}
@@ -165,6 +165,21 @@ func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
 
 	home, _ := os.UserHomeDir()
 	root := r.URL.Query().Get("path")
+
+	// Special: list drives / filesystem roots
+	if root == "roots" || root == "/" && runtime.GOOS == "windows" {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"ok":    true,
+			"dir":   "roots",
+			"parent": "",
+			"home":  home,
+			"is_roots": true,
+			"files": listRoots(),
+		})
+		return
+	}
+
 	if root == "" {
 		d, err := receiveDir()
 		if err != nil {
@@ -226,11 +241,33 @@ func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
 }
 
 func allowedPath(p, home string) bool {
-	p = filepath.Clean(p)
-	if home == "" {
-		return false
+	// No filesystem jail: PIN is the only gate. Any path the OS can access is allowed.
+	return p != ""
+}
+
+func listRoots() []map[string]interface{} {
+	var out []map[string]interface{}
+	if runtime.GOOS == "windows" {
+		for _, letter := range "CDEFGHIJKLMNOPQRSTUVWXYZ" {
+			root := string(letter) + `:\`
+			if st, err := os.Stat(root); err == nil && st.IsDir() {
+				out = append(out, map[string]interface{}{
+					"name":  string(letter) + ":",
+					"path":  root,
+					"is_dir": true,
+					"size":  int64(0),
+					"mod":   "",
+				})
+			}
+		}
+	} else {
+		out = append(out, map[string]interface{}{
+			"name":  "/",
+			"path":  "/",
+			"is_dir": true,
+			"size":  int64(0),
+			"mod":   "",
+		})
 	}
-	// allow anywhere under user home
-	homeC := filepath.Clean(home)
-	return p == homeC || strings.HasPrefix(p, homeC+string(os.PathSeparator))
+	return out
 }
