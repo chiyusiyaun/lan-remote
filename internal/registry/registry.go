@@ -59,15 +59,24 @@ func New(port int) *Server {
 func (s *Server) Port() int { return s.port }
 
 func (s *Server) ListenAndServe() error {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", s.handleAdmin)
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	// inner mux holds real routes
+	inner := http.NewServeMux()
+	inner.HandleFunc("/", s.handleAdmin)
+	inner.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("ok"))
 	})
-	mux.HandleFunc("/api/register", s.handleRegister)
-	mux.HandleFunc("/api/heartbeat", s.handleHeartbeat)
-	mux.HandleFunc("/api/unregister", s.handleUnregister)
-	mux.HandleFunc("/api/devices", s.handleDevices)
+	inner.HandleFunc("/api/register", s.handleRegister)
+	inner.HandleFunc("/api/heartbeat", s.handleHeartbeat)
+	inner.HandleFunc("/api/unregister", s.handleUnregister)
+	inner.HandleFunc("/api/devices", s.handleDevices)
+
+	// outer: root + /server prefix (CloudML / reverse-proxy path)
+	mux := http.NewServeMux()
+	mux.Handle("/server/", http.StripPrefix("/server", inner))
+	mux.HandleFunc("/server", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/server/", http.StatusFound)
+	})
+	mux.Handle("/", inner)
 
 	ln, err := net.Listen("tcp", addr(s.port))
 	if err != nil {
@@ -77,7 +86,7 @@ func (s *Server) ListenAndServe() error {
 		s.port = ta.Port
 	}
 	s.srv = &http.Server{Handler: mux}
-	log.Printf("registry listening on :%d", s.port)
+	log.Printf("registry listening on :%d  (http://host:%d/server/api/...)", s.port, s.port)
 	go s.sweepLoop()
 	return s.srv.Serve(ln)
 }

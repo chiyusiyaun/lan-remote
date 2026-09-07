@@ -31,15 +31,37 @@ func hostname() string {
 	return h
 }
 
+// normalizeHub accepts host, host:port, http://host, http://host:port/path, https://...
 func normalizeHub(s string) string {
 	s = strings.TrimSpace(s)
-	s = strings.TrimPrefix(s, "http://")
-	s = strings.TrimPrefix(s, "https://")
-	s = strings.TrimSuffix(s, "/")
-	if s != "" && !strings.Contains(s, ":") {
-		s += ":8760"
+	if s == "" {
+		return ""
 	}
-	return s
+	hasScheme := strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
+	if !hasScheme {
+		s = "http://" + s
+	}
+	// bare host without port and without path → default registry port
+	rest := s
+	if i := strings.Index(rest, "://"); i >= 0 {
+		rest = rest[i+3:]
+	}
+	slash := strings.Index(rest, "/")
+	hostPart := rest
+	path := ""
+	if slash >= 0 {
+		hostPart = rest[:slash]
+		path = rest[slash:]
+	}
+	if hostPart != "" && !strings.Contains(hostPart, ":") {
+		// no port — only add :8760 when there is no path prefix (path-based deploys often hide the port)
+		if path == "" || path == "/" {
+			s = "http://" + hostPart + ":8760"
+		} else {
+			s = "http://" + hostPart + path
+		}
+	}
+	return strings.TrimRight(s, "/")
 }
 
 type hubBox struct {

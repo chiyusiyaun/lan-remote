@@ -5,12 +5,30 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
+// BaseURL normalizes hub address.
+// Accepts: host:port | http://host:port | http://host/path | https://host/path
+func BaseURL(hub string) string {
+	hub = strings.TrimSpace(hub)
+	if hub == "" {
+		return ""
+	}
+	if !strings.HasPrefix(hub, "http://") && !strings.HasPrefix(hub, "https://") {
+		hub = "http://" + hub
+	}
+	return strings.TrimRight(hub, "/")
+}
+
+func apiURL(hub, path string) string {
+	return BaseURL(hub) + path
+}
+
 // Client registers this machine with a remote registry hub.
 type Client struct {
-	hub    string // host:port
+	hub    string // full base URL
 	self   registerReq
 	stop   chan struct{}
 	httpC  *http.Client
@@ -30,7 +48,7 @@ func NewClientMulti(hub string, name string, ips []string, httpPort int, pinSet 
 		id = "self"
 	}
 	return &Client{
-		hub: hub,
+		hub: BaseURL(hub),
 		self: registerReq{
 			ID:       id + ":" + itoa(httpPort),
 			Name:     name,
@@ -41,7 +59,7 @@ func NewClientMulti(hub string, name string, ips []string, httpPort int, pinSet 
 			Version:  version,
 		},
 		stop:  make(chan struct{}),
-		httpC: &http.Client{Timeout: 3 * time.Second},
+		httpC: &http.Client{Timeout: 5 * time.Second},
 	}
 }
 
@@ -58,7 +76,7 @@ func (c *Client) post(path string, body interface{}) error {
 	if err != nil {
 		return err
 	}
-	url := "http://" + c.hub + path
+	url := apiURL(c.hub, path)
 	resp, err := c.httpC.Post(url, "application/json", bytes.NewReader(b))
 	if err != nil {
 		return err
@@ -94,7 +112,6 @@ func (c *Client) Start() {
 				return
 			case <-t.C:
 				if err := c.Heartbeat(); err != nil {
-					// re-register if hub restarted
 					_ = c.Register()
 				}
 			}
@@ -110,14 +127,17 @@ func (c *Client) Stop() {
 	}
 }
 
-// FetchDevices pulls the online list from a hub.
+// FetchDevices pulls the online list from a hub (host:port or full URL with path).
 func FetchDevices(hub string) ([]Device, error) {
-	hc := &http.Client{Timeout: 3 * time.Second}
-	resp, err := hc.Get("http://" + hub + "/api/devices")
+	hc := &http.Client{Timeout: 5 * time.Second}
+	resp, err := hc.Get(apiURL(hub, "/api/devices"))
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("devices -> %d", resp.StatusCode)
+	}
 	var out struct {
 		Devices []Device `json:"devices"`
 	}
