@@ -58,17 +58,25 @@ func New(port int) *Server {
 
 func (s *Server) Port() int { return s.port }
 
+// RegisterRoutes mounts registry APIs on mux (root paths).
+// Call StartSweep once after wiring.
+func (s *Server) RegisterRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("/api/register", s.handleRegister)
+	mux.HandleFunc("/api/heartbeat", s.handleHeartbeat)
+	mux.HandleFunc("/api/unregister", s.handleUnregister)
+	mux.HandleFunc("/api/devices", s.handleDevices)
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("ok"))
+	})
+}
+
+func (s *Server) StartSweep() { go s.sweepLoop() }
+
 func (s *Server) ListenAndServe() error {
 	// inner mux holds real routes
 	inner := http.NewServeMux()
 	inner.HandleFunc("/", s.handleAdmin)
-	inner.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte("ok"))
-	})
-	inner.HandleFunc("/api/register", s.handleRegister)
-	inner.HandleFunc("/api/heartbeat", s.handleHeartbeat)
-	inner.HandleFunc("/api/unregister", s.handleUnregister)
-	inner.HandleFunc("/api/devices", s.handleDevices)
+	s.RegisterRoutes(inner)
 
 	// outer: root + /server prefix (CloudML / reverse-proxy path)
 	mux := http.NewServeMux()
@@ -87,7 +95,7 @@ func (s *Server) ListenAndServe() error {
 	}
 	s.srv = &http.Server{Handler: mux}
 	log.Printf("registry listening on :%d  (http://host:%d/server/api/...)", s.port, s.port)
-	go s.sweepLoop()
+	s.StartSweep()
 	return s.srv.Serve(ln)
 }
 

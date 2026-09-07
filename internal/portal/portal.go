@@ -44,17 +44,7 @@ func New(cfg Config) *Server {
 
 func (s *Server) ListenAndServe() error {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", s.handleIndex)
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte("ok"))
-	})
-	mux.HandleFunc("/api/status", s.handleStatus)
-	mux.HandleFunc("/api/peers", s.handlePeers)
-	mux.HandleFunc("/api/file", s.handleFileRelay)
-	mux.HandleFunc("/api/files", s.handleFilesRelay)
-	mux.HandleFunc("/api/download", s.handleDownloadRelay)
-	mux.HandleFunc("/api/mkdir", s.handleMkdirRelay)
-	mux.HandleFunc("/proxy", s.handleProxy)
+	s.RegisterRoutes(mux)
 
 	ln, err := net.Listen("tcp", s.cfg.Addr)
 	if err != nil {
@@ -64,10 +54,24 @@ func (s *Server) ListenAndServe() error {
 	return http.Serve(ln, mux)
 }
 
+// RegisterRoutes mounts portal UI + relay APIs (does not own "/" if shared).
+func (s *Server) RegisterRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("/api/status", s.handleStatus)
+	mux.HandleFunc("/api/peers", s.handlePeers)
+	mux.HandleFunc("/api/file", s.handleFileRelay)
+	mux.HandleFunc("/api/files", s.handleFilesRelay)
+	mux.HandleFunc("/api/download", s.handleDownloadRelay)
+	mux.HandleFunc("/api/mkdir", s.handleMkdirRelay)
+	mux.HandleFunc("/proxy", s.handleProxy)
+}
+
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(indexHTML))
 }
+
+// ServeIndex returns the portal UI handler for mux "/".
+func (s *Server) ServeIndex() http.HandlerFunc { return s.handleIndex }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")

@@ -1,10 +1,12 @@
-// lan-remote-server: registry + portal. Not a controllable device.
+// lan-remote-server: single port — registry + portal. Not a controllable device.
 package main
 
 import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
+	"net/http"
 	"os"
 	"time"
 
@@ -20,12 +22,11 @@ const appVersion = "1.2.0"
 func main() {
 	cfg, err := config.Load("service")
 	if err != nil || cfg == nil {
-		cfg = &config.Data{RegistryPort: 8760, HTTPPort: 8765}
+		cfg = &config.Data{HTTPPort: 8765, RegistryPort: 8765}
 	}
-	regPort := flag.Int("port", cfg.RegistryPort, "registry listen port")
-	portalPort := flag.Int("portal", cfg.HTTPPort, "portal/UI listen port")
+	port := flag.Int("port", 8765, "unified listen port (registry + portal)")
 	noGUI := flag.Bool("no-gui", false, "no window, console only")
-	bg := flag.Bool("bg", false, "background: log to file, no console (daemon-friendly)")
+	bg := flag.Bool("bg", false, "background: log to file, no console")
 	logPath := flag.String("log", "", "log file path when -bg")
 	flag.Parse()
 
@@ -33,47 +34,70 @@ func main() {
 		appwin.Background(*logPath)
 	}
 
-	cfg.RegistryPort = *regPort
-	cfg.HTTPPort = *portalPort
+	cfg.HTTPPort = *port
+	cfg.RegistryPort = *port
 	cfg.Hub = ""
 	cfg.PIN = ""
 	_ = config.Save("service", cfg)
 
 	ip := discovery.PrimaryIP()
-	reg := registry.New(*regPort)
 
-	errCh := make(chan error, 2)
-	go func() {
-		if err := reg.ListenAndServe(); err != nil {
-			errCh <- fmt.Errorf("registry: %w", err)
-		}
-	}()
-
+	reg := registry.New(*port)
 	p := portal.New(portal.Config{
-		Addr:     fmt.Sprintf(":%d", *portalPort),
-		Registry: fmt.Sprintf("127.0.0.1:%d", *regPort),
+		Addr:     fmt.Sprintf(":%d", *port),
+		Registry: fmt.Sprintf("127.0.0.1:%d", *port),
 		Version:  appVersion,
 	})
+
+	// one mux: portal UI + registry APIs + /server prefix
+	inner := http.NewServeMux()
+	inner.HandleFunc("/", p.ServeIndex())
+	reg.RegisterRoutes(inner)
+	p.RegisterRoutes(inner)
+
+	outer := http.NewServeMux()
+	outer.Handle("/server/", http.StripPrefix("/server", inner))
+	outer.HandleFunc("/server", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/server/", http.StatusFound)
+	})
+	outer.Handle("/", inner)
+
+	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
+	if err != nil {
+		msg := fmt.Sprintf("监听 :%d 失败: %v\n端口可能被占用", *port, err)
+		if !*bg {
+			appwin.Pause(msg)
+		} else {
+			log.Println(msg)
+		}
+		os.Exit(1)
+	}
+
+	srv := &http.Server{Handler: outer}
+	errCh := make(chan error, 1)
 	go func() {
-		if err := p.ListenAndServe(); err != nil {
-			errCh <- fmt.Errorf("portal: %w", err)
+		reg.StartSweep()
+		if err := srv.Serve(ln); err != nil {
+			errCh <- err
 		}
 	}()
 
-	adminURL := fmt.Sprintf("http://127.0.0.1:%d/", *regPort)
-	portalURL := fmt.Sprintf("http://%s:%d/", ip, *portalPort)
+	url := fmt.Sprintf("http://%s:%d/", ip, *port)
+	admin := fmt.Sprintf("http://127.0.0.1:%d/server/", *port)
 
 	fmt.Println("========================================")
 	fmt.Println("  LAN Remote SERVER  v" + appVersion)
-	fmt.Println("  Role:     Registry + Portal")
-	fmt.Printf("  Admin:    %s\n", adminURL)
-	fmt.Printf("  Portal:   %s\n", portalURL)
+	fmt.Println("  Role:     Registry + Portal (single port)")
+	fmt.Printf("  Port:     %d\n", *port)
+	fmt.Printf("  Portal:   %s\n", url)
+	fmt.Printf("  Admin:    %s\n", admin)
+	fmt.Printf("  Service:  %s/server\n", fmt.Sprintf("http://%s:%d", ip, *port))
 	fmt.Println("========================================")
 
 	go func() {
 		if err := <-errCh; err != nil {
 			log.Println(err)
-			if !*bg && !*noGUI {
+			if !*bg {
 				appwin.Pause("Server failed: " + err.Error())
 			}
 			os.Exit(1)
@@ -84,17 +108,13 @@ func main() {
 		appwin.WaitSignal()
 		return
 	}
-
 	if *bg {
-		// headless: tray only (Windows/Linux desktop); else just wait
 		go func() {
 			time.Sleep(300 * time.Millisecond)
-			appwin.RunWithTray("LAN Remote Server", adminURL, 900, 640, true, appwin.IconServer)
+			appwin.RunWithTray("LAN Remote Server", admin, 960, 680, true, appwin.IconServer)
 		}()
 		appwin.WaitSignal()
 		return
 	}
-
-	// GUI: window + tray (close window → minimize to tray)
-	appwin.RunWithTray("LAN Remote Server", adminURL, 960, 680, false, appwin.IconServer)
+	appwin.RunWithTray("LAN Remote Server", admin, 960, 680, false, appwin.IconServer)
 }

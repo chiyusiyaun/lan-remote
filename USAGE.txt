@@ -1,14 +1,27 @@
-﻿LAN Remote v1.2.0
+LAN Remote v1.2.0
 =================
-server  8760 注册+管理页  8765 门户（不注册自己）
-client  8765 被控+主控
+统一端口：TCP 8765
+  server  注册 API + 门户 + 控制代理（同一端口）
+  client  被控（截屏/键鼠）+ 主控界面
 
-后台
-  Windows: 关窗到托盘；-bg 无控制台
-  Linux:   -bg 或 nohup ./lan-remote-server -bg &
-  Linux 依赖: scrot/imagemagick + xdotool
+路径
+  http://IP:8765/          门户（主控）
+  http://IP:8765/server/   管理页
+  http://IP:8765/server/api/devices
+  http://IP:8765/api/devices
 
-文件传输
-  远程控制时点「传文件」→ 存到对方 Downloads\lan-remote\
+用法
+【中心机】
+  lan-remote-server.exe
+  Service 地址示例: http://中心机IP:8765/server
 
-画质/帧率: 界面可调，帧率最高 120
+【各电脑】
+  lan-remote-client.exe
+  Service IP 填: http://中心机IP:8765/server
+  或局域网: 中心机IP:8765
+
+同机测试: client 用 -port 8766，避免与 server 抢 8765
+
+手机: http://中心机IP:8765
+
+后台: Windows 托盘 / -bg；Linux nohup ... -bg

@@ -54,9 +54,9 @@ func normalizeHub(s string) string {
 		path = rest[slash:]
 	}
 	if hostPart != "" && !strings.Contains(hostPart, ":") {
-		// no port — only add :8760 when there is no path prefix (path-based deploys often hide the port)
+		// bare host: use unified port 8765 (server default); keep path if any
 		if path == "" || path == "/" {
-			s = "http://" + hostPart + ":8760"
+			s = "http://" + hostPart + ":8765"
 		} else {
 			s = "http://" + hostPart + path
 		}
@@ -84,7 +84,7 @@ func (h *hubBox) set(v string) {
 func main() {
 	cfg, err := config.Load("client")
 	if err != nil {
-		cfg = &config.Data{HTTPPort: 8765, RegistryPort: 8760, Quality: 70, FPS: 15}
+		cfg = &config.Data{HTTPPort: 8765, RegistryPort: 8765, Quality: 70, FPS: 15}
 	}
 
 	httpPort := flag.Int("port", cfg.HTTPPort, "control port (this PC is controllable here)")

@@ -48,7 +48,7 @@ func Path(role string) string {
 }
 
 func defaults() *Data {
-	return &Data{HTTPPort: 8765, RegistryPort: 8760, Quality: 70, FPS: 15}
+	return &Data{HTTPPort: 8765, RegistryPort: 8765, Quality: 70, FPS: 15}
 }
 
 // Load reads config for the given role.
@@ -66,7 +66,7 @@ func Load(role string) (*Data, error) {
 		d.HTTPPort = 8765
 	}
 	if d.RegistryPort == 0 {
-		d.RegistryPort = 8760
+		d.RegistryPort = 8765
 	}
 	if d.Quality == 0 {
 		d.Quality = 70

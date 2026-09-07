@@ -6,8 +6,8 @@
 
 ```mermaid
 graph LR
-  subgraph S [lan-remote-server 注册中心]
-    R[注册口 :8760]
+  subgraph S [lan-remote-server 统一端口]
+    R[8765 注册+门户]
   end
   subgraph A [电脑 A client]
     CA[控制口 :8765 截屏+键鼠]
@@ -26,7 +26,7 @@ graph LR
 
 | 程序 | 角色 | 端口 |
 |------|------|------|
-| `lan-remote-server` | 注册中心 + 统一入口门户（不把自己注册为可被控设备） | TCP **8760** 注册 · **8765** 门户 |
+| `lan-remote-server` | 注册中心 + 门户（同一端口，不把自己注册为可被控设备） | TCP **8765** |
 | `lan-remote-client` | 每台电脑：可被控 + 可主控 | TCP **8765** |
 
 - **Server** 不截屏、不注入输入；维护设备目录，并提供网页门户与控制代理。
@@ -51,8 +51,9 @@ graph LR
 lan-remote-server.exe
 ```
 
-- 管理页：`http://中心机IP:8760`
+- 管理页：`http://中心机IP:8765/server/`
 - 统一控制入口：`http://中心机IP:8765`（手机/浏览器用这个）
+- Service 地址（client 填这个）：`http://中心机IP:8765/server`
 
 ### 2. 各电脑
 
@@ -97,8 +98,7 @@ http://中心机IP:8765
 
 | 参数 | 默认 | 说明 |
 |------|------|------|
-| `-port` | 8760 | 注册口 |
-| `-portal` | 8765 | 门户口 |
+| `-port` | 8765 | 统一端口（注册+门户） |
 | `-no-gui` | false | 不建窗口 |
 | `-bg` | false | 后台运行 |
 
@@ -172,8 +172,7 @@ nohup ./lan-remote-server -bg >/dev/null 2>&1 &
 
 ## 防火墙
 
-- TCP **8765**（控制 / 门户）
-- TCP **8760**（注册 / 管理页）
+- TCP **8765**（统一端口：注册 / 门户 / 控制代理）
 
 可用 `open-firewall.bat`（管理员）一键放行 Private/Domain。
 
