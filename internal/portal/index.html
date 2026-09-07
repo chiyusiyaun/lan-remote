@@ -395,6 +395,8 @@ body.touch #mouseBtns{display:flex}
   let peerTimer = null;
   let pendingAddrs = [];
   let useProxy = false; // true when page is served from server portal
+  let hubURL = '';      // registry base, e.g. http://ip:8765/server
+  let viaRelay = false; // last WS connected through hub proxy
   let sessionPin = '';
   let sessionTarget = ''; // host:port of currently connected device
 
@@ -435,6 +437,7 @@ body.touch #mouseBtns{display:flex}
   async function refreshStatus(){
     try {
       const st = await api('/api/status');
+      if(st && st.hub) hubURL = st.hub;
       $('selfName').textContent = st.name || '本机';
       $('selfIPs').textContent = (st.ips||[]).map(ip => 'http://'+ip+':'+st.port).join('  ');
       $('selfClients').textContent = String(st.clients||0);
@@ -444,7 +447,8 @@ body.touch #mouseBtns{display:flex}
       }
       if (st.pin_set && currentPIN) {
         $('selfPin').textContent = currentPIN;
-        $('pinSavedHint').style.display = '';
+        const hint = $('pinSavedHint');
+        if (hint) hint.style.display = '';
       }
     } catch(e){ /* ignore */ }
   }
@@ -517,30 +521,63 @@ body.touch #mouseBtns{display:flex}
 
     showScreen('screenRemote');
     setConnected(false, '连接中…');
+    viaRelay = false;
 
-    // all NIC addresses from the registry entry (device may be multi-homed)
+    // 1) direct candidates (all NICs); 2) server relay fallback
     let candidates = (pendingAddrs && pendingAddrs.length) ? pendingAddrs.slice() : [u.host];
     if (candidates.indexOf(u.host) < 0) candidates.unshift(u.host);
     pendingAddrs = [];
     let tried = 0;
+    let usedRelay = false;
+
+    function hubWSBase(){
+      if(useProxy) return location.protocol==='https:'?'wss:':'ws:'+'//'+location.host;
+      if(!hubURL) return '';
+      try{
+        const h = new URL(hubURL);
+        return (h.protocol==='https:'?'wss:':'ws:')+'//'+h.host + (h.pathname.replace(/\/$/,''));
+      }catch(_){ return ''; }
+    }
 
     function tryNext(){
-      if (tried >= candidates.length){
+      let curl, label, targetHost;
+      if (tried < candidates.length){
+        const cand = candidates[tried++];
+        let chost = cand;
+        if (!/^https?:\/\//i.test(chost)) chost = 'http://'+chost;
+        let cu;
+        try { cu = new URL(chost); } catch { tryNext(); return; }
+        targetHost = cu.host;
+        if (useProxy){
+          curl = ((location.protocol==='https:'?'wss:':'ws:')+'//'+location.host+'/proxy?target='+encodeURIComponent(cu.host));
+          label = cu.host+' (代理)';
+        }else{
+          curl = (cu.protocol==='https:'?'wss:':'ws:')+'//'+cu.host+'/ws';
+          label = cu.host;
+        }
+      } else if (!usedRelay && !useProxy){
+        // direct failed → relay via hub/server
+        const base = hubWSBase();
+        if (!base){
+          setConnected(false, '连接失败');
+          toast('直连失败，且无 Service 可代理');
+          return;
+        }
+        // prefer first candidate as relay target
+        const th = candidates[0] || u.host;
+        usedRelay = true;
+        viaRelay = true;
+        targetHost = th.replace(/^https?:\/\//,'');
+        curl = base + '/proxy?target=' + encodeURIComponent(targetHost);
+        label = targetHost+' (经 Service 转发)';
+      } else {
         setConnected(false, '连接失败');
-        toast('所有地址均无法连接');
+        toast('直连与 Service 转发均失败');
         return;
       }
-      const cand = candidates[tried++];
-      let chost = cand;
-      if (!/^https?:\/\//i.test(chost)) chost = 'http://'+chost;
-      let cu;
-      try { cu = new URL(chost); } catch { tryNext(); return; }
-      // Portal mode: go through server:8765/proxy so users only need the server IP
-      const curl = useProxy
-        ? ((location.protocol==='https:'?'wss:':'ws:')+'//'+location.host+'/proxy?target='+encodeURIComponent(cu.host))
-        : ((cu.protocol==='https:'?'wss:':'ws:')+'//'+cu.host+'/ws');
-      $('remoteTitle').textContent = cu.host;
-      setConnected(false, '连接中… '+cu.host);
+
+      $('remoteTitle').textContent = label;
+      setConnected(false, '连接中… '+label);
 
       if (ws){ try{ws.close();}catch(e){} }
       ws = new WebSocket(curl);
@@ -559,9 +596,9 @@ body.touch #mouseBtns{display:flex}
             if (m.ok){
               authed = true;
               sessionPin = pin;
-              sessionTarget = cu.host;
-              setConnected(true, '已连接');
-              toast('已连接 '+cu.host);
+              sessionTarget = targetHost;
+              setConnected(true, viaRelay||useProxy ? '已连接(转发)' : '已连接');
+              toast('已连接 '+label);
               send({type:'settings', quality:+$('quality').value, fps:+$('fps').value});
             } else {
               setConnected(false, 'PIN 错误');
@@ -802,17 +839,36 @@ body.touch #mouseBtns{display:flex}
   let remoteParent = '';
   let remoteHome = '';
 
+  function hubOrigin(){
+    if(!hubURL) return '';
+    try{
+      const h = new URL(hubURL, location.href);
+      return h.origin + h.pathname.replace(/\/$/,'');
+    }catch(_){ return ''; }
+  }
+
   function fileBase(){
     if(!connected || !sessionPin || !sessionTarget) return null;
     if(useProxy){
       return {
         file: '/api/file?target='+encodeURIComponent(sessionTarget),
         list: '/api/files?target='+encodeURIComponent(sessionTarget),
-        dl:   '/api/download?target='+encodeURIComponent(sessionTarget)
+        dl:   '/api/download?target='+encodeURIComponent(sessionTarget),
+        mkdir:'/api/mkdir?target='+encodeURIComponent(sessionTarget)
+      };
+    }
+    // relayed session: file APIs also via hub
+    if(viaRelay && hubURL){
+      const base = hubOrigin();
+      return {
+        file: base+'/api/file?target='+encodeURIComponent(sessionTarget),
+        list: base+'/api/files?target='+encodeURIComponent(sessionTarget),
+        dl:   base+'/api/download?target='+encodeURIComponent(sessionTarget),
+        mkdir: base+'/api/mkdir?target='+encodeURIComponent(sessionTarget)
       };
     }
     const h = 'http://'+sessionTarget;
-    return { file: h+'/api/file', list: h+'/api/files', dl: h+'/api/download' };
+    return { file: h+'/api/file', list: h+'/api/files', dl: h+'/api/download', mkdir: h+'/api/mkdir' };
   }
 
   function fmtSize(n){
@@ -951,9 +1007,10 @@ body.touch #mouseBtns{display:flex}
   async function remoteMkdir(path){
     const b = fileBase();
     if(!b || !path) return;
-    const url = '/api/mkdir' + (useProxy? ('?target='+encodeURIComponent(sessionTarget)+'&path='+encodeURIComponent(path))
-      : ('http://'+sessionTarget+'/api/mkdir?path='+encodeURIComponent(path)));
-    await fetch(useProxy? url : url, { headers:{'X-LR-Pin':sessionPin} });
+    let url = b.mkdir;
+    if(!url) return;
+    url += (url.includes('?')?'&':'?')+'path='+encodeURIComponent(path);
+    await fetch(url, { headers:{'X-LR-Pin':sessionPin} });
   }
 
   async function uploadLocalDirRecursive(dirHandle, destPath){
@@ -1127,6 +1184,7 @@ body.touch #mouseBtns{display:flex}
   }
 
   api('/api/status').then(st=>{
+    if(st && st.hub) hubURL = st.hub;
     if (st && (st.proxy || st.app === 'portal')){
       useProxy = true;
       enterControllerMode('统一入口 · 通过 Server 代理控制');
