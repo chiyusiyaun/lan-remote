@@ -5,6 +5,8 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
+	"net/url"
 	"os"
 	"os/user"
 	"strings"
@@ -62,6 +64,92 @@ func normalizeHub(s string) string {
 		}
 	}
 	return strings.TrimRight(s, "/")
+}
+
+// hubCandidates returns possible Service URLs to try, in order.
+// e.g. user types "1.2.3.4" or "host/server" — we also try :8765 and /server.
+func hubCandidates(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	if !strings.HasPrefix(raw, "http://") && !strings.HasPrefix(raw, "https://") {
+		raw = "http://" + raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return []string{normalizeHub(raw)}
+	}
+	scheme := u.Scheme
+	if scheme == "" {
+		scheme = "http"
+	}
+	host := u.Host // may include :port
+	path := strings.TrimRight(u.Path, "/")
+
+	hostname := host
+	port := ""
+	if h, p, err := net.SplitHostPort(host); err == nil {
+		hostname = h
+		port = p
+	}
+
+	type cand struct{ hostPort, p string }
+	var gens []cand
+	if port != "" {
+		gens = append(gens,
+			cand{host, path},
+			cand{host, path + "/server"},
+		)
+		if path == "" || path == "/server" {
+			// also try without explicit port if it was 8765? keep as-is
+		}
+	} else {
+		// no port: try default 8765 first, then 80 (gateway), then raw host
+		gens = append(gens,
+			cand{net.JoinHostPort(hostname, "8765"), path},
+			cand{net.JoinHostPort(hostname, "8765"), path + "/server"},
+			cand{host, path},
+			cand{host, path + "/server"},
+		)
+	}
+
+	seen := map[string]bool{}
+	var out []string
+	for _, g := range gens {
+		if g.hostPort == "" {
+			continue
+		}
+		p := g.p
+		if p != "" && !strings.HasPrefix(p, "/") {
+			p = "/" + p
+		}
+		u2 := scheme + "://" + g.hostPort + p
+		u2 = strings.TrimRight(u2, "/")
+		if u2 == "" || seen[u2] {
+			continue
+		}
+		seen[u2] = true
+		out = append(out, u2)
+	}
+	return out
+}
+
+// resolveHub probes candidates until one answers /api/devices.
+func resolveHub(raw string) (string, error) {
+	cands := hubCandidates(raw)
+	if len(cands) == 0 {
+		return "", fmt.Errorf("empty hub")
+	}
+	var last error
+	for _, c := range cands {
+		if _, err := registry.FetchDevices(c); err == nil {
+			return c, nil
+		} else {
+			last = err
+		}
+	}
+	return "", fmt.Errorf("tried %d addresses, last: %v", len(cands), last)
 }
 
 type hubBox struct {
@@ -135,10 +223,20 @@ func main() {
 		regClient.Start()
 	}
 
-	// if hub already saved, register immediately (port may not be final yet; re-register after bind)
+	// if hub already saved, register immediately (retry candidates if needed)
 	if h := hb.get(); h != "" {
 		go func() {
 			time.Sleep(500 * time.Millisecond)
+			// try saved URL first; if down, probe variants (add :8765 / /server)
+			if _, err := registry.FetchDevices(h); err != nil {
+				if addr, err2 := resolveHub(h); err2 == nil {
+					hb.set(addr)
+					cfg.Hub = addr
+					_ = config.Save("client", cfg)
+					h = addr
+					log.Println("hub fallback:", addr)
+				}
+			}
 			startReg(h)
 		}()
 	}
@@ -173,22 +271,21 @@ func main() {
 			}
 		},
 		OnSetHub: func(raw string) error {
-			addr := normalizeHub(raw)
-			if addr == "" {
+			if strings.TrimSpace(raw) == "" {
 				hb.set("")
 				cfg.Hub = ""
 				_ = config.Save("client", cfg)
 				return nil
 			}
-			if _, err := registry.FetchDevices(addr); err != nil {
-				return fmt.Errorf("无法连接 Service %s", addr)
+			addr, err := resolveHub(raw)
+			if err != nil {
+				return fmt.Errorf("无法连接 Service: %v", err)
 			}
 			hb.set(addr)
 			cfg.Hub = addr
 			_ = config.Save("client", cfg)
-			// re-bind registry with actual port
 			startReg(addr)
-			log.Println("hub set:", addr)
+			log.Println("hub set:", addr, "(from", raw, ")")
 			return nil
 		},
 	})
