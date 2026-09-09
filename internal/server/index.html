@@ -204,32 +204,27 @@ body.touch #mouseBtns{display:flex}
       <div class="brand">LAN <span>Remote</span></div>
       <div class="status"><span class="dot on"></span><span id="homeStatus">本机服务运行中</span></div>
       <div class="spacer"></div>
-      <button class="btn" id="btnRefresh">刷新设备</button>
-      <button class="btn" id="btnManual">手动连接</button>
-      <button class="btn" id="btnSetSvc">Service IP</button>
-      <button class="btn" id="btnChangePin">修改 PIN</button>
+      <button class="btn primary" id="btnManual">连接被控端</button>
+      <button class="btn" id="btnRefresh">刷新</button>
+      <button class="btn" id="btnSetSvc">Service</button>
+      <button class="btn" id="btnChangePin">PIN</button>
     </div>
     <div class="home-body">
-      <div class="panel">
-        <h2>本机（可被控）</h2>
-        <div class="row-kv"><span class="k">设备名</span><span class="v" id="selfName">—</span></div>
-        <div class="row-kv"><span class="k">局域网地址</span><span class="v" id="selfIPs">—</span></div>
-        <div class="row-kv"><span class="k">在线控制端</span><span class="v" id="selfClients">0</span></div>
-        <div class="pin-box">
-          <span class="k" style="color:var(--muted);font-size:12px">当前 PIN</span>
-          <code id="selfPin">------</code>
-        </div>
-        <div class="hint" id="pinSavedHint" style="display:none">PIN 已保存到本机，下次启动自动加载。</div>
+      <div class="panel" id="controllerHint">
+        <h2>连接被控端</h2>
+        <p style="margin:0 0 12px;color:var(--muted);font-size:13px;line-height:1.5">
+          这里是控制台，不是登录页。选设备或点「连接被控端」，再输入<b>对方</b>的 PIN。
+        </p>
+        <button class="btn primary" id="btnManual2" style="width:100%;padding:14px;font-size:15px">输入地址 + PIN 连接</button>
       </div>
-
       <div class="panel">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-          <h2 style="margin:0">局域网设备（选择要控制的）</h2>
-          <span class="status" id="peerCount">扫描中…</span>
+          <h2 style="margin:0">在线设备</h2>
+          <span class="status" id="peerCount">—</span>
         </div>
         <div class="hint" id="hubInfo" style="margin:0 0 10px"></div>
         <div class="peer-list" id="peerList">
-          <div class="empty">正在从注册服务器拉取在线设备…</div>
+          <div class="empty">加载中…</div>
         </div>
       </div>
     </div>
@@ -438,15 +433,15 @@ body.touch #mouseBtns{display:flex}
     try {
       const st = await api('/api/status');
       if(st && st.hub) hubURL = st.hub;
-      $('selfName').textContent = st.name || '本机';
-      $('selfIPs').textContent = (st.ips||[]).map(ip => 'http://'+ip+':'+st.port).join('  ');
-      $('selfClients').textContent = String(st.clients||0);
+      const n = $('selfName'); if(n) n.textContent = st.name || '本机';
+      const ips = $('selfIPs'); if(ips) ips.textContent = (st.ips||[]).map(ip => 'http://'+ip+':'+st.port).join('  ');
+      const cl = $('selfClients'); if(cl) cl.textContent = String(st.clients||0);
       if (st.hub) {
         const role = st.role === 'hub' ? '本机为注册中心' : '注册到 ' + st.hub;
-        $('hubInfo').textContent = role + ' · v' + (st.version||'');
+        const hi = $('hubInfo'); if(hi) hi.textContent = role + ' · v' + (st.version||'');
       }
       if (st.pin_set && currentPIN) {
-        $('selfPin').textContent = currentPIN;
+        const sp = $('selfPin'); if(sp) sp.textContent = currentPIN;
         const hint = $('pinSavedHint');
         if (hint) hint.style.display = '';
       }
@@ -764,7 +759,7 @@ body.touch #mouseBtns{display:flex}
         body: JSON.stringify({pin:a})
       });
       currentPIN = a;
-      $('selfPin').textContent = a;
+      const sp1 = $('selfPin'); if(sp1) sp1.textContent = a;
       const svc = ($('svcInput').value||'').trim();
       if (svc){
         try {
@@ -797,7 +792,7 @@ body.touch #mouseBtns{display:flex}
     if (!p) return;
     if (p.length < 4){ toast('至少 4 位'); return; }
     api('/api/pin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:p})})
-      .then(()=>{ currentPIN=p; $('selfPin').textContent=p; toast('PIN 已更新'); })
+      .then(()=>{ currentPIN=p; const sp2=$('selfPin'); if(sp2) sp2.textContent=p; toast('PIN 已更新'); })
       .catch(e=>toast('失败: '+e.message));
   };
   $('btnSetSvc').onclick = async ()=>{
@@ -812,12 +807,15 @@ body.touch #mouseBtns{display:flex}
   };
 
   $('btnRefresh').onclick = ()=>{ loadPeers(); refreshStatus(); toast('已刷新'); };
-  $('btnManual').onclick = ()=>{
-    $('host').value = location.host;
+  function openConnectDialog(addr){
+    $('host').value = addr || location.host || '';
     $('pin').value = '';
     $('connectPanel').classList.remove('hidden');
-    $('host').focus();
-  };
+    setTimeout(()=>{ try{$('pin').focus();}catch(_){} }, 80);
+  }
+  $('btnManual').onclick = ()=> openConnectDialog(location.host);
+  const bm2 = $('btnManual2');
+  if(bm2) bm2.onclick = ()=> openConnectDialog(location.host);
   $('btnCancel').onclick = ()=>$('connectPanel').classList.add('hidden');
   $('btnGo').onclick = ()=>{
     $('connectPanel').classList.add('hidden');
@@ -1184,17 +1182,17 @@ body.touch #mouseBtns{display:flex}
     }
     if (bootPin){
       currentPIN = bootPin;
-      $('selfPin').textContent = bootPin;
+      const sp3 = $('selfPin'); if(sp3) sp3.textContent = bootPin;
       showScreen('screenHome');
       refreshStatus();
       loadPeers();
       peerTimer = setInterval(loadPeers, 3000);
     } else if (!isLocal){
-      enterControllerMode('控制端模式（无法修改本机 PIN）');
+      enterControllerMode('控制端模式 · 选设备或手动连接');
     } else {
       if (st && st.pin_set){
         currentPIN = '••••••';
-        $('selfPin').textContent = '已保存';
+        const sp4 = $('selfPin'); if(sp4) sp4.textContent = '已保存';
         const hint = $('pinSavedHint');
         if (hint) hint.style.display = '';
         showScreen('screenHome');
