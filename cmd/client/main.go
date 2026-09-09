@@ -1,4 +1,4 @@
-// lan-remote-client: every PC 鈥?can be controlled (screen+input) and can control others.
+﻿// lan-remote-client: every PC 閳?can be controlled (screen+input) and can control others.
 package main
 
 import (
@@ -20,7 +20,7 @@ import (
 	"lan-remote/internal/server"
 )
 
-const appVersion = "1.2.1"
+const appVersion = "1.2.2"
 
 func hostname() string {
 	h, err := os.Hostname()
@@ -43,7 +43,7 @@ func normalizeHub(s string) string {
 	if !hasScheme {
 		s = "http://" + s
 	}
-	// bare host without port and without path 鈫?default registry port
+	// bare host without port and without path 閳?default registry port
 	rest := s
 	if i := strings.Index(rest, "://"); i >= 0 {
 		rest = rest[i+3:]
@@ -67,7 +67,7 @@ func normalizeHub(s string) string {
 }
 
 // hubCandidates returns possible Service URLs to try, in order.
-// e.g. user types "1.2.3.4" or "host/server" — we also try :8765 and /server.
+// e.g. user types "1.2.3.4" or "host/server" 鈥?we also try :8765 and /server.
 func hubCandidates(raw string) []string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -279,7 +279,7 @@ func main() {
 			}
 			addr, err := resolveHub(raw)
 			if err != nil {
-				return fmt.Errorf("鏃犳硶杩炴帴 Service: %v", err)
+				return fmt.Errorf("閺冪姵纭舵潻鐐村复 Service: %v", err)
 			}
 			hb.set(addr)
 			cfg.Hub = addr

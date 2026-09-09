@@ -1,4 +1,4 @@
-// lan-remote-server: single port — registry + portal. Not a controllable device.
+﻿// lan-remote-server: single port 鈥?registry + portal. Not a controllable device.
 package main
 
 import (
@@ -17,7 +17,7 @@ import (
 	"lan-remote/internal/registry"
 )
 
-const appVersion = "1.2.1"
+const appVersion = "1.2.2"
 
 func main() {
 	cfg, err := config.Load("service")

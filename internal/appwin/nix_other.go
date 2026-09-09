@@ -16,14 +16,20 @@ import (
 func openWindow(title, url string, w, h int) bool { return false }
 
 func runWithTray(title, url string, w, h int, startHidden bool, icon []byte) {
-	tray.Run(tray.Options{
-		Tooltip: title,
-		Icon:    icon,
-		OnOpen:  func() { openBrowser(url) },
-		OnQuit:  func() { os.Exit(0) },
-	})
-	openBrowser(url)
-	fmt.Println("Running with tray (if available). Ctrl+C to exit.")
+	if tray.Available() {
+		tray.Run(tray.Options{
+			Tooltip: title,
+			Icon:    icon,
+			OnOpen:  func() { openBrowser(url) },
+			OnQuit:  func() { os.Exit(0) },
+		})
+	} else {
+		fmt.Println("Headless: no tray. Use -no-gui or HTTP only.")
+	}
+	if tray.Available() && !startHidden {
+		openBrowser(url)
+	}
+	fmt.Println("Running. Ctrl+C to exit.")
 	waitSignal()
 }
 

@@ -2,6 +2,8 @@ package tray
 
 import (
 	"log"
+	"os"
+	"runtime"
 	"sync"
 
 	"github.com/energye/systray"
@@ -9,7 +11,7 @@ import (
 
 type Options struct {
 	Tooltip string
-	Icon    []byte // optional ICO bytes; default uses server icon
+	Icon    []byte
 	OnOpen  func()
 	OnHide  func()
 	OnQuit  func()
@@ -21,8 +23,27 @@ var (
 	optsKeep Options
 )
 
-// Run starts the tray icon (non-blocking).
+// Available reports whether a desktop tray can run on this session.
+func Available() bool {
+	if runtime.GOOS == "windows" {
+		return true
+	}
+	// Linux/macOS: need a graphical session
+	if os.Getenv("DISPLAY") != "" || os.Getenv("WAYLAND_DISPLAY") != "" {
+		return true
+	}
+	if runtime.GOOS == "darwin" {
+		return true
+	}
+	return false
+}
+
+// Run starts the tray icon (non-blocking). No-op if no desktop session.
 func Run(opts Options) {
+	if !Available() {
+		log.Println("tray: skipped (no desktop session)")
+		return
+	}
 	mu.Lock()
 	if started {
 		mu.Unlock()
@@ -85,4 +106,9 @@ func onReady() {
 
 func onExit() {}
 
-func Quit() { systray.Quit() }
+func Quit() {
+	if !Available() {
+		return
+	}
+	systray.Quit()
+}
