@@ -20,7 +20,7 @@ import (
 	"lan-remote/internal/server"
 )
 
-const appVersion = "1.2.2"
+const appVersion = "1.2.3"
 
 func hostname() string {
 	h, err := os.Hostname()

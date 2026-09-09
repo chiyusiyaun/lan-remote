@@ -17,7 +17,7 @@ import (
 	"lan-remote/internal/registry"
 )
 
-const appVersion = "1.2.2"
+const appVersion = "1.2.3"
 
 func main() {
 	cfg, err := config.Load("service")

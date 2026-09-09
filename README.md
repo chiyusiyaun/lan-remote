@@ -35,7 +35,7 @@ graph LR
 |------|------|
 | `lan-remote-server.exe` | 涓績鏈猴紙娉ㄥ唽涓績 + 闂ㄦ埛锛塛indows |
 | `lan-remote-client.exe` | 鍚勭數鑴?Windows |
-| `lan-remote_1.2.2_amd64.deb` | Linux Debian/Ubuntu 涓€閿畨瑁?|
+| `lan-remote_1.2.3_amd64.deb` | Linux Debian/Ubuntu 涓€閿畨瑁?|
 | `lan-remote-*-linux` | Linux 瑁镐簩杩涘埗 |
 | `open-firewall.bat` | 闃茬伀澧欐斁琛岋紙绠＄悊鍛樿繍琛岋級 |
 
@@ -116,7 +116,7 @@ sudo apt install scrot imagemagick xdotool
 Linux 瀹夎锛堟帹鑽?Debian/Ubuntu锛夛細
 
 ```bash
-sudo dpkg -i lan-remote_1.2.2_amd64.deb
+sudo dpkg -i lan-remote_1.2.3_amd64.deb
 # 鑻ョ己渚濊禆锛歴udo apt-get install -f
 ```
 

@@ -34,7 +34,7 @@ type Server struct {
 
 func New(cfg Config) *Server {
 	if cfg.Version == "" {
-		cfg.Version = "1.2.2"
+		cfg.Version = "1.2.3"
 	}
 	return &Server{
 		cfg: cfg,

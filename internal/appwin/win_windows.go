@@ -50,7 +50,6 @@ func (st *winState) showExisting() bool {
 	if h == 0 {
 		return false
 	}
-	// restore if minimized, then show + foreground
 	if v, _, _ := procIsIconic.Call(h); v != 0 {
 		procShowWindow.Call(h, swRestore)
 	}
@@ -79,54 +78,53 @@ func (st *winState) openNew() {
 	st.opening = true
 	st.mu.Unlock()
 
-	go func() {
-		defer func() {
-			st.mu.Lock()
-			st.opening = false
-			st.mu.Unlock()
-			if r := recover(); r != nil {
-				fmt.Println("window panic:", r)
-			}
-		}()
-
-		wv := webview2.NewWithOptions(webview2.WebViewOptions{
-			AutoFocus: true,
-			WindowOptions: webview2.WindowOptions{
-				Title:  st.title,
-				Width:  uint(st.w),
-				Height: uint(st.h),
-				Center: true,
-			},
-		})
-		if wv == nil {
-			openBrowser(st.url)
-			return
-		}
-
-		var hwnd uintptr
-		if p := wv.Window(); p != nil {
-			hwnd = uintptr(p)
-		}
+	// WebView2 must run on the main OS thread; keep this synchronous
+	// when called from main. Avoid mixing with systray.Run (AppHang).
+	defer func() {
 		st.mu.Lock()
-		st.wv = wv
-		st.hwnd = hwnd
+		st.opening = false
 		st.mu.Unlock()
+		if r := recover(); r != nil {
+			fmt.Println("window panic:", r)
+		}
+	}()
 
-		wv.Navigate(st.url)
-		procShowWindow.Call(hwnd, swShow)
-		procSetForeground.Call(hwnd)
+	wv := webview2.NewWithOptions(webview2.WebViewOptions{
+		AutoFocus: true,
+		WindowOptions: webview2.WindowOptions{
+			Title:  st.title,
+			Width:  uint(st.w),
+			Height: uint(st.h),
+			Center: true,
+		},
+	})
+	if wv == nil {
+		openBrowser(st.url)
+		return
+	}
 
-		wv.Run() // blocks until window destroyed
+	var hwnd uintptr
+	if p := wv.Window(); p != nil {
+		hwnd = uintptr(p)
+	}
+	st.mu.Lock()
+	st.wv = wv
+	st.hwnd = hwnd
+	st.mu.Unlock()
 
-		st.mu.Lock()
-		st.wv = nil
-		st.hwnd = 0
-		st.mu.Unlock()
-		// window already closed; swallow destroy errors
-		func() {
-			defer func() { _ = recover() }()
-			wv.Destroy()
-		}()
+	wv.Navigate(st.url)
+	procShowWindow.Call(hwnd, swShow)
+	procSetForeground.Call(hwnd)
+
+	wv.Run() // blocks until window destroyed
+
+	st.mu.Lock()
+	st.wv = nil
+	st.hwnd = 0
+	st.mu.Unlock()
+	func() {
+		defer func() { _ = recover() }()
+		wv.Destroy()
 	}()
 }
 
@@ -162,25 +160,32 @@ func openWindow(title, url string, w, h int) bool {
 	return true
 }
 
+// runWithTray: WebView2 on main thread only.
+// Tray is NOT started here — systray + WebView2 both need a message pump
+// and caused AppHang (WER AppHangB1) on Windows.
 func runWithTray(title, url string, w, h int, startHidden bool, icon []byte) {
 	st := &winState{url: url, title: title, w: w, h: h}
 
-	tray.Run(tray.Options{
-		Tooltip: title,
-		Icon:    icon,
-		OnOpen:  st.showOrOpen,
-		OnHide:  st.hide,
-		OnQuit:  func() { os.Exit(0) },
-	})
-
-	if startHidden {
-		// stay in tray; user opens from menu
-		fmt.Println("Started hidden in tray. Use tray icon → 显示窗口.")
-	} else {
-		st.openNew()
+	// Optional experimental tray via env LAN_REMOTE_TRAY=1
+	if os.Getenv("LAN_REMOTE_TRAY") == "1" && tray.Available() {
+		tray.Run(tray.Options{
+			Tooltip: title,
+			Icon:    icon,
+			OnOpen:  st.showOrOpen,
+			OnHide:  st.hide,
+			OnQuit:  func() { os.Exit(0) },
+		})
 	}
 
-	// keep process alive until quit
+	if startHidden {
+		fmt.Println("Started without window. Open from tray if enabled, or restart without -bg.")
+		waitSignal()
+		return
+	}
+
+	st.openNew()
+	// window closed — keep process for background control service
+	fmt.Println("Window closed; control port stays up. Ctrl+C to exit.")
 	waitSignal()
 }
 
