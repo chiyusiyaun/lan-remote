@@ -531,7 +531,7 @@ body.touch #mouseBtns{display:flex}
     let usedRelay = false;
 
     function hubWSBase(){
-      if(useProxy) return location.protocol==='https:'?'wss:':'ws:'+'//'+location.host;
+      if(useProxy) return (location.protocol==='https:'?'wss:':'ws:')+'//'+location.host;
       if(!hubURL) return '';
       try{
         const h = new URL(hubURL);
@@ -549,7 +549,7 @@ body.touch #mouseBtns{display:flex}
         try { cu = new URL(chost); } catch { tryNext(); return; }
         targetHost = cu.host;
         if (useProxy){
-          curl = ((location.protocol==='https:'?'wss:':'ws:')+'//'+location.host+'/proxy?target='+encodeURIComponent(cu.host));
+          curl = ((location.protocol==='https:'?'wss:':'ws:')+'//'+location.host+'/proxy/'+cu.host);
           label = cu.host+' (代理)';
         }else{
           curl = (cu.protocol==='https:'?'wss:':'ws:')+'//'+cu.host+'/ws';
@@ -568,7 +568,7 @@ body.touch #mouseBtns{display:flex}
         usedRelay = true;
         viaRelay = true;
         targetHost = th.replace(/^https?:\/\//,'');
-        curl = base + '/proxy?target=' + encodeURIComponent(targetHost);
+        curl = base + '/proxy/' + targetHost;
         label = targetHost+' (经 Service 转发)';
       } else {
         setConnected(false, '连接失败');
@@ -849,22 +849,14 @@ body.touch #mouseBtns{display:flex}
 
   function fileBase(){
     if(!connected || !sessionPin || !sessionTarget) return null;
-    if(useProxy){
+    if(useProxy || (viaRelay && hubURL)){
+      const prefix = useProxy ? '' : hubOrigin();
+      const t = sessionTarget;
       return {
-        file: '/api/file?target='+encodeURIComponent(sessionTarget),
-        list: '/api/files?target='+encodeURIComponent(sessionTarget),
-        dl:   '/api/download?target='+encodeURIComponent(sessionTarget),
-        mkdir:'/api/mkdir?target='+encodeURIComponent(sessionTarget)
-      };
-    }
-    // relayed session: file APIs also via hub
-    if(viaRelay && hubURL){
-      const base = hubOrigin();
-      return {
-        file: base+'/api/file?target='+encodeURIComponent(sessionTarget),
-        list: base+'/api/files?target='+encodeURIComponent(sessionTarget),
-        dl:   base+'/api/download?target='+encodeURIComponent(sessionTarget),
-        mkdir: base+'/api/mkdir?target='+encodeURIComponent(sessionTarget)
+        file: prefix+'/api/file/'+t,
+        list: prefix+'/api/files/'+t,
+        dl:   prefix+'/api/download/'+t,
+        mkdir: prefix+'/api/mkdir/'+t
       };
     }
     const h = 'http://'+sessionTarget;

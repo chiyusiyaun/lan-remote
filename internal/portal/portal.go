@@ -59,10 +59,44 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/status", s.handleStatus)
 	mux.HandleFunc("/api/peers", s.handlePeers)
 	mux.HandleFunc("/api/file", s.handleFileRelay)
+	mux.HandleFunc("/api/file/", s.handleFileRelay)
 	mux.HandleFunc("/api/files", s.handleFilesRelay)
+	mux.HandleFunc("/api/files/", s.handleFilesRelay)
 	mux.HandleFunc("/api/download", s.handleDownloadRelay)
+	mux.HandleFunc("/api/download/", s.handleDownloadRelay)
 	mux.HandleFunc("/api/mkdir", s.handleMkdirRelay)
+	mux.HandleFunc("/api/mkdir/", s.handleMkdirRelay)
 	mux.HandleFunc("/proxy", s.handleProxy)
+	mux.HandleFunc("/proxy/", s.handleProxy)
+}
+
+// extractTarget reads target from ?target= or path suffix (host:port).
+func extractTarget(r *http.Request, prefix string) string {
+	t := strings.TrimSpace(r.URL.Query().Get("target"))
+	if t != "" {
+		return normTarget(t)
+	}
+	p := strings.TrimPrefix(r.URL.Path, prefix)
+	p = strings.Trim(p, "/")
+	if p == "" {
+		return ""
+	}
+	// /api/file/host:port  or  /api/file/host/port
+	if strings.Count(p, "/") == 0 && strings.Contains(p, ":") {
+		return normTarget(p)
+	}
+	return normTarget(strings.Replace(p, "/", ":", 1))
+}
+
+func normTarget(t string) string {
+	t = strings.TrimSpace(t)
+	if t == "" {
+		return ""
+	}
+	if !strings.Contains(t, ":") {
+		t += ":8765"
+	}
+	return t
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -97,15 +131,34 @@ func (s *Server) handlePeers(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleProxy relays a browser WebSocket to a target client control port.
-// Browser:  ws://server:8765/proxy?target=192.168.1.20:8765
-// Upstream: ws://192.168.1.20:8765/ws
+// handleProxy relays a browser WebSocket to a target client control port.
+//
+// Supported:
+//
+//	ws://server/proxy?target=192.168.1.20:8765
+//	ws://server/proxy/192.168.1.20:8765
+//	ws://server/proxy/192.168.1.20/8765
+//
+// Path form works behind gateways that drop query strings.
 func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
-	target := r.URL.Query().Get("target")
+	target := strings.TrimSpace(r.URL.Query().Get("target"))
 	if target == "" {
-		http.Error(w, "target required", 400)
-		return
+		// path: /proxy/host:port  or  /proxy/host/port
+		p := strings.TrimPrefix(r.URL.Path, "/proxy")
+		p = strings.Trim(p, "/")
+		if p != "" {
+			target = strings.Replace(p, "/", ":", 1) // host/port -> host:port
+			// if already host:port keep as-is
+			if strings.Count(p, "/") == 0 && strings.Contains(p, ":") {
+				target = p
+			}
+		}
 	}
 	target = strings.TrimSpace(target)
+	if target == "" {
+		http.Error(w, "target required (use /proxy/host:port or ?target=host:port)", 400)
+		return
+	}
 	if !strings.Contains(target, ":") {
 		target += ":8765"
 	}
@@ -127,10 +180,12 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 	dialer := websocket.Dialer{HandshakeTimeout: 5 * time.Second}
 	upConn, _, err := dialer.Dial(upURL.String(), nil)
 	if err != nil {
+		log.Println("proxy dial", target, err)
 		_ = clientConn.WriteMessage(websocket.TextMessage, []byte(`{"type":"auth","ok":false,"error":"upstream"}`))
 		return
 	}
 	defer upConn.Close()
+	log.Println("proxy", r.RemoteAddr, "->", target)
 
 	errc := make(chan error, 2)
 	go func() {
@@ -164,15 +219,12 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 	<-errc
 }
 
-// handleFileRelay proxies POST /api/file?target=host:port to the client.
+// handleFileRelay proxies POST /api/file[?target=|/host:port] to the client.
 func (s *Server) handleFileRelay(w http.ResponseWriter, r *http.Request) {
-	target := r.URL.Query().Get("target")
+	target := extractTarget(r, "/api/file")
 	if target == "" {
 		http.Error(w, "target required", 400)
 		return
-	}
-	if !strings.Contains(target, ":") {
-		target += ":8765"
 	}
 	pin := r.Header.Get("X-LR-Pin")
 	q := r.URL.Query()
@@ -204,8 +256,8 @@ func (s *Server) handleFileRelay(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.Copy(w, resp.Body)
 }
 
-func (s *Server) relayGET(w http.ResponseWriter, r *http.Request, upstreamPath string) {
-	target := r.URL.Query().Get("target")
+func (s *Server) relayGET(w http.ResponseWriter, r *http.Request, prefix, upstreamPath string) {
+	target := extractTarget(r, prefix)
 	if target == "" {
 		http.Error(w, "target required", 400)
 		return
@@ -246,15 +298,15 @@ func (s *Server) relayGET(w http.ResponseWriter, r *http.Request, upstreamPath s
 }
 
 func (s *Server) handleFilesRelay(w http.ResponseWriter, r *http.Request) {
-	s.relayGET(w, r, "/api/files")
+	s.relayGET(w, r, "/api/files", "/api/files")
 }
 
 func (s *Server) handleDownloadRelay(w http.ResponseWriter, r *http.Request) {
-	s.relayGET(w, r, "/api/download")
+	s.relayGET(w, r, "/api/download", "/api/download")
 }
 
 func (s *Server) handleMkdirRelay(w http.ResponseWriter, r *http.Request) {
-	s.relayGET(w, r, "/api/mkdir") // mkdir is GET? use POST via generic
+	s.relayGET(w, r, "/api/mkdir", "/api/mkdir")
 }
 
 // silence unused in some builds
