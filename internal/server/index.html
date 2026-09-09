@@ -548,7 +548,7 @@ body.touch #mouseBtns{display:flex}
     pendingAddrs = [];
     viaRelay = false;
 
-    // Direct only — no Service/WS proxy.
+    // Direct only — all addrs in parallel; first auth OK wins.
     const attempts = [];
     for (const cand of candidates){
       let chost = cand;
@@ -559,49 +559,64 @@ body.touch #mouseBtns{display:flex}
       const dproto = cu.protocol==='https:'?'wss:':'ws:';
       attempts.push({ url: dproto+'//'+th+'/ws', label: th, target: th });
     }
+    if (!attempts.length){
+      setConnected(false, '连接失败');
+      toast('无可用地址');
+      return;
+    }
 
-    let ai = 0;
-    function tryNext(){
-      if (ai >= attempts.length){
-        setConnected(false, '连接失败');
-        toast('所有地址直连失败');
-        return;
-      }
-      const a = attempts[ai++];
-      const curl = a.url, label = a.label, targetHost = a.target;
+    setConnected(false, '连接中… ('+attempts.length+' 个地址)');
+    $('remoteTitle').textContent = attempts.map(a=>a.target).join(' / ');
 
-      $('remoteTitle').textContent = label;
-      setConnected(false, '连接中… '+label);
+    let settled = false;
+    const sockets = [];
+    function closeAll(except){
+      sockets.forEach(s=>{ if(s!==except){ try{s.close();}catch(_){} } });
+    }
+    function failAll(){
+      if (settled) return;
+      settled = true;
+      closeAll(null);
+      setConnected(false, '连接失败');
+      toast('所有地址直连失败');
+    }
 
-      if (ws){ try{ws.close();}catch(e){} }
-      ws = new WebSocket(curl);
-      ws.binaryType = 'arraybuffer';
+    for (const a of attempts){
+      let sock;
+      try { sock = new WebSocket(a.url); } catch { continue; }
+      sockets.push(sock);
+      sock.binaryType = 'arraybuffer';
       let opened = false;
-      let authed = false;
-
-      ws.onopen = () => {
+      sock.onopen = () => {
         opened = true;
-        ws.send(JSON.stringify({type:'auth', pin: pin}));
+        try { sock.send(JSON.stringify({type:'auth', pin: pin})); } catch(_) {}
       };
-      ws.onmessage = (ev) => {
+      sock.onmessage = (ev) => {
         if (typeof ev.data === 'string'){
           let m; try{ m=JSON.parse(ev.data); }catch{return;}
           if (m.type==='auth'){
             if (m.ok){
-              authed = true;
+              if (settled) { try{sock.close();}catch(_){} return; }
+              settled = true;
+              ws = sock;
               sessionPin = pin;
-              sessionTarget = targetHost;
+              sessionTarget = a.target;
+              viaRelay = false;
+              closeAll(sock);
               setConnected(true, '已连接');
-              toast('已连接 '+label);
+              toast('已连接 '+a.label);
               send({type:'settings', quality:+$('quality').value, fps:+$('fps').value});
-            } else {
+            } else if (!settled){
+              // wrong PIN on a reachable host — stop guessing other IPs
+              settled = true;
+              closeAll(null);
               setConnected(false, 'PIN 错误');
               toast('PIN 不正确');
-              try{ws.close();}catch(e){}
             }
           }
           return;
         }
+        if (settled && sock !== ws) return;
         const blob = new Blob([ev.data],{type:'image/jpeg'});
         createImageBitmap(blob).then(bmp=>{
           if (canvas.width!==bmp.width||canvas.height!==bmp.height){
@@ -612,10 +627,11 @@ body.touch #mouseBtns{display:flex}
           bmp.close&&bmp.close();
         }).catch(()=>{});
       };
-      ws.onerror = () => { if (!opened) tryNext(); };
-      setTimeout(()=>{ if (!opened && !authed) tryNext(); }, 1500);
+      setTimeout(()=>{
+        if (!opened && !settled) try{sock.close();}catch(_){}
+      }, 2000);
     }
-    tryNext();
+    setTimeout(()=>{ if(!settled) failAll(); }, 4000);
   }
 
   // pointer
