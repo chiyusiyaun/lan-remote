@@ -1,9 +1,9 @@
-//go:build ignore
+﻿//go:build ignore
 
 package main
 
 // Builds a Debian package from dist/ Linux binaries + packaging/linux assets.
-// Usage: go run tools/mkdeb/main.go -out dist/lan-remote_1.2.0_amd64.deb
+// Usage: go run tools/mkdeb/main.go -out dist/lan-remote_1.2.1_amd64.deb
 import (
 	"archive/tar"
 	"bytes"
@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	version = "1.2.0"
+	version = "1.2.1"
 	arch    = "amd64"
 )
 
@@ -201,7 +201,7 @@ func writeDeb(path string, controlTar, dataTar []byte) error {
 }
 
 func writeArFile(w io.Writer, name string, data []byte) error {
-	// global header only once — caller writes it
+	// global header only once 鈥?caller writes it
 	return writeArMember(w, name, data)
 }
 

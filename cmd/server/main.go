@@ -17,7 +17,7 @@ import (
 	"lan-remote/internal/registry"
 )
 
-const appVersion = "1.2.0"
+const appVersion = "1.2.1"
 
 func main() {
 	cfg, err := config.Load("service")
@@ -49,7 +49,6 @@ func main() {
 		Version:  appVersion,
 	})
 
-	// one mux: portal UI + registry APIs + /server prefix
 	inner := http.NewServeMux()
 	inner.HandleFunc("/", p.ServeIndex())
 	reg.RegisterRoutes(inner)
@@ -64,7 +63,7 @@ func main() {
 
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
 	if err != nil {
-		msg := fmt.Sprintf("监听 :%d 失败: %v\n端口可能被占用", *port, err)
+		msg := fmt.Sprintf("listen :%d failed: %v (port may be in use)", *port, err)
 		if !*bg {
 			appwin.Pause(msg)
 		} else {
@@ -91,7 +90,7 @@ func main() {
 	fmt.Printf("  Port:     %d\n", *port)
 	fmt.Printf("  Portal:   %s\n", url)
 	fmt.Printf("  Admin:    %s\n", admin)
-	fmt.Printf("  Service:  %s/server\n", fmt.Sprintf("http://%s:%d", ip, *port))
+	fmt.Printf("  Service:  http://%s:%d/server\n", ip, *port)
 	fmt.Println("========================================")
 
 	go func() {

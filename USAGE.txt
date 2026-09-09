@@ -1,27 +1,23 @@
-LAN Remote v1.2.0
+﻿LAN Remote v1.2.1
 =================
-统一端口：TCP 8765
-  server  注册 API + 门户 + 控制代理（同一端口）
-  client  被控（截屏/键鼠）+ 主控界面
+缁熶竴绔彛锛歍CP 8765
+  server  娉ㄥ唽 API + 闂ㄦ埛 + 鎺у埗浠ｇ悊锛堝悓涓€绔彛锛?  client  琚帶锛堟埅灞?閿紶锛? 涓绘帶鐣岄潰
 
-路径
-  http://IP:8765/          门户（主控）
-  http://IP:8765/server/   管理页
-  http://IP:8765/server/api/devices
+璺緞
+  http://IP:8765/          闂ㄦ埛锛堜富鎺э級
+  http://IP:8765/server/   绠＄悊椤?  http://IP:8765/server/api/devices
   http://IP:8765/api/devices
 
-用法
-【中心机】
-  lan-remote-server.exe
-  Service 地址示例: http://中心机IP:8765/server
+鐢ㄦ硶
+銆愪腑蹇冩満銆?  lan-remote-server.exe
+  Service 鍦板潃绀轰緥: http://涓績鏈篒P:8765/server
 
-【各电脑】
-  lan-remote-client.exe
-  Service IP 填: http://中心机IP:8765/server
-  或局域网: 中心机IP:8765
+銆愬悇鐢佃剳銆?  lan-remote-client.exe
+  Service IP 濉? http://涓績鏈篒P:8765/server
+  鎴栧眬鍩熺綉: 涓績鏈篒P:8765
 
-同机测试: client 用 -port 8766，避免与 server 抢 8765
+鍚屾満娴嬭瘯: client 鐢?-port 8766锛岄伩鍏嶄笌 server 鎶?8765
 
-手机: http://中心机IP:8765
+鎵嬫満: http://涓績鏈篒P:8765
 
-后台: Windows 托盘 / -bg；Linux nohup ... -bg
+鍚庡彴: Windows 鎵樼洏 / -bg锛汱inux nohup ... -bg
