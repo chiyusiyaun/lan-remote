@@ -1,3 +1,5 @@
+//go:build !windows
+
 package tray
 
 import (
@@ -23,22 +25,13 @@ var (
 	optsKeep Options
 )
 
-// Available reports whether a desktop tray can run on this session.
 func Available() bool {
-	if runtime.GOOS == "windows" {
-		return true
-	}
-	// Linux/macOS: need a graphical session
-	if os.Getenv("DISPLAY") != "" || os.Getenv("WAYLAND_DISPLAY") != "" {
-		return true
-	}
 	if runtime.GOOS == "darwin" {
 		return true
 	}
-	return false
+	return os.Getenv("DISPLAY") != "" || os.Getenv("WAYLAND_DISPLAY") != ""
 }
 
-// Run starts the tray icon (non-blocking). No-op if no desktop session.
 func Run(opts Options) {
 	if !Available() {
 		log.Println("tray: skipped (no desktop session)")
@@ -96,11 +89,6 @@ func onReady() {
 			optsKeep.OnQuit()
 		}
 		systray.Quit()
-	})
-	systray.SetOnDClick(func(menu systray.IMenu) {
-		if optsKeep.OnOpen != nil {
-			optsKeep.OnOpen()
-		}
 	})
 }
 

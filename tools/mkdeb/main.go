@@ -3,7 +3,7 @@
 package main
 
 // Builds a Debian package from dist/ Linux binaries + packaging/linux assets.
-// Usage: go run tools/mkdeb/main.go -out dist/lan-remote_1.2.4_amd64.deb
+// Usage: go run tools/mkdeb/main.go -out dist/lan-remote_1.2.5_amd64.deb
 import (
 	"archive/tar"
 	"bytes"
@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	version = "1.2.4"
+	version = "1.2.5"
 	arch    = "amd64"
 )
 

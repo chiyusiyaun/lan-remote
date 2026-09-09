@@ -1,6 +1,8 @@
+﻿//go:build !windows
+
 package tray
 
-// Icon: 16×16 remote-desktop mark — dark bezel + cyan screen + link arrows.
+// Icon: 16脳16 remote-desktop mark 鈥?dark bezel + cyan screen + link arrows.
 var iconBytes = buildICO()
 
 func buildICO() []byte {

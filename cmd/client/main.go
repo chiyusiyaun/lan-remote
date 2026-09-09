@@ -20,7 +20,7 @@ import (
 	"lan-remote/internal/server"
 )
 
-const appVersion = "1.2.4"
+const appVersion = "1.2.5"
 
 // defaultHub is the built-in Service (registry) address used when none is configured.
 const defaultHub = "http://s-20260907094643-z7qr9.bcecn-bj-cloudml.xiaomi.srv"
@@ -70,7 +70,7 @@ func normalizeHub(s string) string {
 }
 
 // hubCandidates returns possible Service URLs to try, in order.
-// e.g. user types "1.2.4.4" or "host/server" 閳?we also try :8765 and /server.
+// e.g. user types "1.2.5.4" or "host/server" 閳?we also try :8765 and /server.
 func hubCandidates(raw string) []string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
