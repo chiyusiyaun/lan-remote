@@ -545,54 +545,29 @@ body.touch #mouseBtns{display:flex}
     if (!candidates.length) candidates = [u.host];
     candidates.sort((a,b)=> scoreHost(a)-scoreHost(b));
     pendingAddrs = [];
-    let tried = 0;
-    let usedRelay = false;
+    viaRelay = false;
 
-    function hubWSBase(){
-      if(useProxy) return (location.protocol==='https:'?'wss:':'ws:')+'//'+location.host;
-      if(!hubURL) return '';
-      try{
-        const h = new URL(hubURL);
-        return (h.protocol==='https:'?'wss:':'ws:')+'//'+h.host + (h.pathname.replace(/\/$/,''));
-      }catch(_){ return ''; }
+    // Direct only — no Service/WS proxy.
+    const attempts = [];
+    for (const cand of candidates){
+      let chost = cand;
+      if (!/^https?:\/\//i.test(chost)) chost = 'http://'+chost;
+      let cu;
+      try { cu = new URL(chost); } catch { continue; }
+      const th = cu.host;
+      const dproto = cu.protocol==='https:'?'wss:':'ws:';
+      attempts.push({ url: dproto+'//'+th+'/ws', label: th, target: th });
     }
 
+    let ai = 0;
     function tryNext(){
-      let curl, label, targetHost;
-      if (tried < candidates.length){
-        const cand = candidates[tried++];
-        let chost = cand;
-        if (!/^https?:\/\//i.test(chost)) chost = 'http://'+chost;
-        let cu;
-        try { cu = new URL(chost); } catch { tryNext(); return; }
-        targetHost = cu.host;
-        if (useProxy){
-          curl = ((location.protocol==='https:'?'wss:':'ws:')+'//'+location.host+'/proxy/'+cu.host);
-          label = cu.host+' (代理)';
-        }else{
-          curl = (cu.protocol==='https:'?'wss:':'ws:')+'//'+cu.host+'/ws';
-          label = cu.host;
-        }
-      } else if (!usedRelay && !useProxy){
-        // direct failed → relay via hub/server
-        const base = hubWSBase();
-        if (!base){
-          setConnected(false, '连接失败');
-          toast('直连失败，且无 Service 可代理');
-          return;
-        }
-        // prefer first candidate as relay target
-        const th = candidates[0] || u.host;
-        usedRelay = true;
-        viaRelay = true;
-        targetHost = th.replace(/^https?:\/\//,'');
-        curl = base + '/proxy/' + targetHost;
-        label = targetHost+' (经 Service 转发)';
-      } else {
+      if (ai >= attempts.length){
         setConnected(false, '连接失败');
-        toast('直连与 Service 转发均失败');
+        toast('所有地址直连失败');
         return;
       }
+      const a = attempts[ai++];
+      const curl = a.url, label = a.label, targetHost = a.target;
 
       $('remoteTitle').textContent = label;
       setConnected(false, '连接中… '+label);
@@ -615,7 +590,7 @@ body.touch #mouseBtns{display:flex}
               authed = true;
               sessionPin = pin;
               sessionTarget = targetHost;
-              setConnected(true, viaRelay||useProxy ? '已连接(转发)' : '已连接');
+              setConnected(true, '已连接');
               toast('已连接 '+label);
               send({type:'settings', quality:+$('quality').value, fps:+$('fps').value});
             } else {
@@ -870,16 +845,7 @@ body.touch #mouseBtns{display:flex}
 
   function fileBase(){
     if(!connected || !sessionPin || !sessionTarget) return null;
-    if(useProxy || (viaRelay && hubURL)){
-      const prefix = useProxy ? '' : hubOrigin();
-      const t = sessionTarget;
-      return {
-        file: prefix+'/api/file/'+t,
-        list: prefix+'/api/files/'+t,
-        dl:   prefix+'/api/download/'+t,
-        mkdir: prefix+'/api/mkdir/'+t
-      };
-    }
+    // Always talk to the controlled host directly (no Service file proxy).
     const h = 'http://'+sessionTarget;
     return { file: h+'/api/file', list: h+'/api/files', dl: h+'/api/download', mkdir: h+'/api/mkdir' };
   }
