@@ -1,4 +1,4 @@
-﻿// lan-remote-client: every PC 閳?can be controlled (screen+input) and can control others.
+// lan-remote-client: every PC 閳?can be controlled (screen+input) and can control others.
 package main
 
 import (
@@ -21,6 +21,9 @@ import (
 )
 
 const appVersion = "1.2.3"
+
+// defaultHub is the built-in Service (registry) address used when none is configured.
+const defaultHub = "http://s-20260907094643-z7qr9.bcecn-bj-cloudml.xiaomi.srv"
 
 func hostname() string {
 	h, err := os.Hostname()
@@ -177,7 +180,7 @@ func main() {
 
 	httpPort := flag.Int("port", cfg.HTTPPort, "control port (this PC is controllable here)")
 	pin := flag.String("pin", cfg.PIN, "PIN for this PC")
-	hub := flag.String("hub", cfg.Hub, "Service/registry IP (can also set in UI)")
+	hub := flag.String("hub", "", "Service URL (default built-in CloudML hub; also set in UI)")
 	quality := flag.Int("q", cfg.Quality, "JPEG quality 1-100")
 	fps := flag.Int("fps", cfg.FPS, "FPS 1-240")
 	noGUI := flag.Bool("no-gui", false, "console + browser")
@@ -203,6 +206,9 @@ func main() {
 	cfg.FPS = *fps
 	if *hub != "" {
 		cfg.Hub = normalizeHub(*hub)
+	}
+	if cfg.Hub == "" {
+		cfg.Hub = defaultHub
 	}
 	if cfg.DeviceName == "" {
 		cfg.DeviceName = name
