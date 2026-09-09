@@ -1,4 +1,4 @@
-// lan-remote-client: every PC 閳?can be controlled (screen+input) and can control others.
+﻿// lan-remote-client: every PC 闁?can be controlled (screen+input) and can control others.
 package main
 
 import (
@@ -20,7 +20,7 @@ import (
 	"lan-remote/internal/server"
 )
 
-const appVersion = "1.2.3"
+const appVersion = "1.2.4"
 
 // defaultHub is the built-in Service (registry) address used when none is configured.
 const defaultHub = "http://s-20260907094643-z7qr9.bcecn-bj-cloudml.xiaomi.srv"
@@ -46,7 +46,7 @@ func normalizeHub(s string) string {
 	if !hasScheme {
 		s = "http://" + s
 	}
-	// bare host without port and without path 閳?default registry port
+	// bare host without port and without path 闁?default registry port
 	rest := s
 	if i := strings.Index(rest, "://"); i >= 0 {
 		rest = rest[i+3:]
@@ -70,7 +70,7 @@ func normalizeHub(s string) string {
 }
 
 // hubCandidates returns possible Service URLs to try, in order.
-// e.g. user types "1.2.3.4" or "host/server" 鈥?we also try :8765 and /server.
+// e.g. user types "1.2.4.4" or "host/server" 閳?we also try :8765 and /server.
 func hubCandidates(raw string) []string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -285,7 +285,7 @@ func main() {
 			}
 			addr, err := resolveHub(raw)
 			if err != nil {
-				return fmt.Errorf("閺冪姵纭舵潻鐐村复 Service: %v", err)
+				return fmt.Errorf("闁哄啰濮电涵鑸垫交閻愭潙澶?Service: %v", err)
 			}
 			hb.set(addr)
 			cfg.Hub = addr

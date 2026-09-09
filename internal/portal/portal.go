@@ -1,4 +1,4 @@
-package portal
+﻿package portal
 
 import (
 	_ "embed"
@@ -26,7 +26,7 @@ type Server struct {
 
 func New(cfg Config) *Server {
 	if cfg.Version == "" {
-		cfg.Version = "1.2.3"
+		cfg.Version = "1.2.4"
 	}
 	return &Server{cfg: cfg}
 }
