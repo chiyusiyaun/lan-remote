@@ -521,6 +521,29 @@ body.touch #mouseBtns{display:flex}
     // 1) direct candidates (all NICs); 2) server relay fallback
     let candidates = (pendingAddrs && pendingAddrs.length) ? pendingAddrs.slice() : [u.host];
     if (candidates.indexOf(u.host) < 0) candidates.unshift(u.host);
+
+    function scoreHost(h){
+      const bare = String(h||'').replace(/^https?:\/\//,'').split('/')[0].split(':')[0];
+      if (!bare) return 9;
+      if (bare === location.hostname) return 0;
+      const loc = (location.hostname||'').split('.');
+      const b = bare.split('.');
+      if (loc.length>=2 && b.length>=2 && loc[0]===b[0] && loc[1]===b[1]) return 1;
+      if (/^192\.168\./.test(bare)) return 2;
+      if (/^10\./.test(bare)) return 3;
+      if (/^172\.(1[6-9]|2\d|3[01])\./.test(bare)) return 6;
+      return 5;
+    }
+    // drop obvious dead targets (docker/k8s) then sort by same-subnet first
+    candidates = candidates.filter(c=>{
+      const bare = String(c||'').replace(/^https?:\/\//,'').split(':')[0];
+      if (/^172\.(17|18)\./.test(bare)) return false;
+      if (/^10\.42\./.test(bare)) return false;
+      if (/^127\./.test(bare)) return false;
+      return true;
+    });
+    if (!candidates.length) candidates = [u.host];
+    candidates.sort((a,b)=> scoreHost(a)-scoreHost(b));
     pendingAddrs = [];
     let tried = 0;
     let usedRelay = false;
@@ -614,7 +637,7 @@ body.touch #mouseBtns{display:flex}
         }).catch(()=>{});
       };
       ws.onerror = () => { if (!opened) tryNext(); };
-      setTimeout(()=>{ if (!opened && !authed) tryNext(); }, 2000);
+      setTimeout(()=>{ if (!opened && !authed) tryNext(); }, 1500);
     }
     tryNext();
   }

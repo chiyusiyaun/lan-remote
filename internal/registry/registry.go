@@ -147,14 +147,31 @@ func isUsableIP(ip string) bool {
 	if p == nil {
 		return false
 	}
-	// 127.0.0.0/8 and ::1 are useless to other machines
-	if p.IsLoopback() {
+	if p.IsLoopback() || p.IsUnspecified() || p.IsMulticast() {
 		return false
 	}
-	if p.IsUnspecified() || p.IsMulticast() {
+	if p.IsLinkLocalUnicast() || p.IsLinkLocalMulticast() {
 		return false
 	}
-	return p.To4() != nil // IPv4 only for now
+	v4 := p.To4()
+	if v4 == nil {
+		return false
+	}
+	// drop common container / CNI / virtual ranges (not reachable from office LAN)
+	// 172.17.0.0/16, 172.18.0.0/16 — docker
+	// 10.42.0.0/16 — flannel/k8s
+	// 169.254.0.0/16 — APIPA (already link-local)
+	if v4[0] == 172 && (v4[1] == 17 || v4[1] == 18) {
+		return false
+	}
+	if v4[0] == 10 && v4[1] == 42 {
+		return false
+	}
+	// .0 network address as host is almost never useful (10.42.0.0 etc.)
+	if v4[3] == 0 && v4[2] == 0 {
+		return false
+	}
+	return true
 }
 
 func (s *Server) upsert(req registerReq, sourceIP string) Device {

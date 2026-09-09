@@ -279,6 +279,16 @@ func AllIPs() []string {
 			if ip[0] == 169 && ip[1] == 254 {
 				continue
 			}
+			// skip docker / k8s / typical CNI (not reachable from office LAN)
+			if ip[0] == 172 && (ip[1] == 17 || ip[1] == 18) {
+				continue
+			}
+			if ip[0] == 10 && ip[1] == 42 {
+				continue
+			}
+			if ip[3] == 0 && ip[2] == 0 {
+				continue
+			}
 			add(ip.String())
 		}
 	}
