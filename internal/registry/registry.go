@@ -167,8 +167,11 @@ func isUsableIP(ip string) bool {
 	if v4[0] == 10 && v4[1] == 42 {
 		return false
 	}
-	// .0 network address as host is almost never useful (10.42.0.0 etc.)
+	// .0 network / .255 broadcast as host is useless
 	if v4[3] == 0 && v4[2] == 0 {
+		return false
+	}
+	if v4[3] == 255 {
 		return false
 	}
 	return true

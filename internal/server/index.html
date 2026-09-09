@@ -540,6 +540,7 @@ body.touch #mouseBtns{display:flex}
       if (/^172\.(17|18)\./.test(bare)) return false;
       if (/^10\.42\./.test(bare)) return false;
       if (/^127\./.test(bare)) return false;
+      if (/\.255$/.test(bare)) return false;
       return true;
     });
     if (!candidates.length) candidates = [u.host];

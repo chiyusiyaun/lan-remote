@@ -289,6 +289,9 @@ func AllIPs() []string {
 			if ip[3] == 0 && ip[2] == 0 {
 				continue
 			}
+			if ip[3] == 255 {
+				continue
+			}
 			add(ip.String())
 		}
 	}
